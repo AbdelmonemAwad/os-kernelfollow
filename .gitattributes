@@ -4,3 +4,27 @@
 # command and an rc script would fail in a way nobody would guess from the error.
 * text=auto eol=lf
 *.png binary
+
+# What an appliance carries is the archive of a commit: the release tarball the self-update
+# downloads, which GitHub makes with `git archive`, and what xgs-image-builder puts into an image
+# where it carries this plugin (its fetch-project.sh takes `git archive` too). Nothing an appliance
+# does not read goes into it: the documentation, the workflows, the files about the project itself,
+# and the repository's own tools, which run from a checkout here and in CI - as in os-linkhealth
+# (2026-10-22). A file an appliance starts to read leaves this list in the same change.
+# Kept from tools/: make-package.sh, which is run on a firewall to build a package. Neither
+# install/install.sh nor pkg/ runs a tool from here, and nothing installed imports
+# arabic_catalogue.py - only check-strings.py does, from a checkout - so both are left out. If the
+# installer is ever made to run the string check, both leave this list in that change: os-linkhealth
+# once left out a module its installer imported, and the first boot of an image failed on it
+# (2026-10-22): "No module named 'arabic_catalogue'".
+docs/ export-ignore
+.github/ export-ignore
+CODE_OF_CONDUCT.md export-ignore
+CONTRIBUTING.md export-ignore
+SECURITY.md export-ignore
+tools/add-copyright.py export-ignore
+tools/arabic_catalogue.py export-ignore
+tools/check-code-language.py export-ignore
+tools/check-private-data.py export-ignore
+tools/check-strings.py export-ignore
+tools/check-uninstall.sh export-ignore

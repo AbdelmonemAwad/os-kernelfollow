@@ -1,0 +1,11 @@
+#-
+# SPDX-License-Identifier: BSD-2-Clause
+# Copyright (c) 2026 Abdelmonem Awad <eg2@live.com>
+#
+# Every five minutes, follow.sh compares the kernel the next boot will use with the stamp beside each
+# registered module. When they agree, which is almost always, it exits; when they differ, a new kernel
+# is on disk and not booted yet, and that is the window to rebuild. The upgrade and stop hooks cover
+# the same ground; this is the layer that depends on nothing but cron. With nothing registered it is
+# one directory listing.
+
+*/5 * * * * root /bin/sh /usr/local/opnsense/scripts/kernelfollow/follow.sh > /dev/null 2>&1

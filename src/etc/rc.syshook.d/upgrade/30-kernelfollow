@@ -1,0 +1,20 @@
+#!/bin/sh
+#-
+# SPDX-License-Identifier: BSD-2-Clause
+# Copyright (c) 2026 Abdelmonem Awad <eg2@live.com>
+#
+# Rebuild the registered modules against the kernel an update has just fetched, before the host
+# reboots onto it. scripts/firmware/upgrade.sh runs this level between installing the packages and
+# applying the pending kernel, so the kernel is still a staged set here; follow.sh reads it there.
+#
+# It never fails an update: every path exits 0, and a failure is a warning in the log under
+# kernelfollow. With nothing registered, follow.sh returns at once.
+FOLLOW=/usr/local/opnsense/scripts/kernelfollow/follow.sh
+[ -f "${FOLLOW}" ] || exit 0
+if ! OUT=$(/bin/sh "${FOLLOW}" 2>&1); then
+	/usr/bin/logger -t kernelfollow -p daemon.err "a module could NOT be rebuilt for the kernel this update installed"
+	echo "${OUT}" | /usr/bin/tail -8 | while read -r l; do
+		/usr/bin/logger -t kernelfollow -p daemon.err "  ${l}"
+	done
+fi
+exit 0

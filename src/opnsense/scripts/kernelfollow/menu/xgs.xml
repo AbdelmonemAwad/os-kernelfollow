@@ -1,0 +1,18 @@
+<!--
+    SPDX-License-Identifier: BSD-2-Clause
+    Copyright (c) 2026 Abdelmonem Awad <eg2@live.com>
+-->
+<menu>
+    <!--
+        On an XGS appliance - os-xgs-npu installed - the page is in the XGS section, with the
+        appliance's own pages (2026-10-25); the section has the name and attributes os-xgs-npu
+        gives it, so the two menu files make one section. It sits in os-xgs-npu's order, which is
+        OPNsense's own: the appliance's pages (10-45), the family's plugins by subject (50-58:
+        hardware, the system, protection, reports), Updates and Problem Reports (80, 85), the two
+        logs (90, 91), About (99). place-menu.sh copies this file, or own.xml, to the model's
+        Menu/Menu.xml.
+    -->
+    <XGS VisibleName="XGS" cssClass="fa fa-microchip fa-fw" order="35">
+        <KernelFollow order="54" VisibleName="Kernel Follower" url="/ui/kernelfollow"/>
+    </XGS>
+</menu>

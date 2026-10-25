@@ -1,0 +1,21 @@
+#!/bin/sh
+#-
+# SPDX-License-Identifier: BSD-2-Clause
+# Copyright (c) 2026 Abdelmonem Awad <eg2@live.com>
+#
+# Rebuild the registered modules for the kernel the NEXT boot will use, while this one still runs and
+# the network it needs is still up. The ordinary Update button reaches no upgrade hook - it puts the
+# new kernel in /boot and reboots - but rc.reboot, rc.halt and rc.shutdown all run `rc.syshook stop`
+# before anything is torn down, so this is the moment that always comes (os-xgs-npu, 2026-10-02).
+# Numbered below 80-freebsd, which takes the network with it.
+#
+# Bounded: a fetch that will not finish must not hold the machine. And never the reason a reboot does
+# not happen. With nothing registered, or nothing changed, it is a directory listing and two reads.
+: ${FOLLOW:=/usr/local/opnsense/scripts/kernelfollow/follow.sh}
+: ${LIMIT:=600}
+[ -f "${FOLLOW}" ] || exit 0
+if ! /usr/bin/timeout -k 10 "${LIMIT}" /bin/sh "${FOLLOW}" > /dev/null 2>&1; then
+	/usr/bin/logger -t kernelfollow -p daemon.err \
+	    "at shutdown: a module was not rebuilt in ${LIMIT}s, or failed; see the entries above"
+fi
+exit 0

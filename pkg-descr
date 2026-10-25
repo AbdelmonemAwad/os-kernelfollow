@@ -1,0 +1,18 @@
+Kernel Follower rebuilds the out-of-tree kernel modules registered with it
+for the kernel an OPNsense update installs, before the host reboots onto
+it: the kernel's own sources fetched from opnsense/src (or taken from an
+archive carried on the machine), each module built from nothing, checked,
+and installed with a stamp of the kernel it was built for, the previous
+build kept beside it. It runs from the upgrade hook, at every orderly
+reboot (bounded), and every five minutes, and removes the sources of
+kernels no longer run once the new one has settled.
+
+Where os-xgs-npu is installed, its own two modules stay with its own
+follower.
+
+Plugin Changelog
+================
+
+1.0.0
+
+* Initial release

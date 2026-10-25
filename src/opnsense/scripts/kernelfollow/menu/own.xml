@@ -1,0 +1,16 @@
+<!--
+    SPDX-License-Identifier: BSD-2-Clause
+    Copyright (c) 2026 Abdelmonem Awad <eg2@live.com>
+-->
+<menu>
+    <!--
+        Where os-xgs-npu is not installed: under System, and not under Services, because the
+        subject of this page is the system's own kernel and the modules built against it, whichever
+        plugin they belong to. It sits directly under System as a leaf of its own, the way Fan
+        Control does, so no order is given. place-menu.sh copies this file, or xgs.xml, to the
+        model's Menu/Menu.xml.
+    -->
+    <System>
+        <KernelFollow VisibleName="Kernel Follower" cssClass="fa fa-cogs fa-fw" url="/ui/kernelfollow"/>
+    </System>
+</menu>
