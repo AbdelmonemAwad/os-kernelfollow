@@ -1,0 +1,36 @@
+<!--
+    SPDX-License-Identifier: BSD-2-Clause
+    Copyright (c) 2026 Abdelmonem Awad <eg2@live.com>
+-->
+<model>
+    <mount>//OPNsense/KernelFollow</mount>
+    <version>1.0.0</version>
+    <description>Kernel follower</description>
+    <items>
+        <!--
+            follow.sh and status.py read these straight out of /conf/config.xml by element name - the
+            stop hook runs it with no model in front of it - so the names are not free.
+        -->
+        <general>
+            <enabled type="BooleanField">
+                <Required>Y</Required>
+                <Default>1</Default>
+            </enabled>
+            <fetch type="BooleanField">
+                <Required>Y</Required>
+                <Default>1</Default>
+            </fetch>
+            <prune type="BooleanField">
+                <Required>Y</Required>
+                <Default>1</Default>
+            </prune>
+            <settle_hours type="IntegerField">
+                <Required>Y</Required>
+                <Default>24</Default>
+                <MinimumValue>1</MinimumValue>
+                <MaximumValue>720</MaximumValue>
+                <ValidationMessage>Between 1 and 720 hours.</ValidationMessage>
+            </settle_hours>
+        </general>
+    </items>
+</model>

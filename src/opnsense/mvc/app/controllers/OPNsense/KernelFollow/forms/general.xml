@@ -1,0 +1,30 @@
+<!--
+    SPDX-License-Identifier: BSD-2-Clause
+    Copyright (c) 2026 Abdelmonem Awad <eg2@live.com>
+-->
+<form>
+    <field>
+        <id>kernelfollow.general.enabled</id>
+        <label>Follow the kernel</label>
+        <type>checkbox</type>
+        <help>Rebuild every registered module for the kernel the next boot will use, every five minutes, when an update runs, and at every orderly reboot. Off, nothing is rebuilt by itself; Follow now still works.</help>
+    </field>
+    <field>
+        <id>kernelfollow.general.fetch</id>
+        <label>Fetch kernel sources</label>
+        <type>checkbox</type>
+        <help>Download the sources of the kernel to follow from github.com/opnsense/src when they are not on the machine already - about 350 MB, of which only sys/ is kept. Off, a module is built only from sources already here or carried in the pool.</help>
+    </field>
+    <field>
+        <id>kernelfollow.general.prune</id>
+        <label>Remove old kernel sources</label>
+        <type>checkbox</type>
+        <help>Once the new kernel has run for the time below, with every module matching it, remove the sources of kernels this machine no longer runs. The running kernel's sources always stay.</help>
+    </field>
+    <field>
+        <id>kernelfollow.general.settle_hours</id>
+        <label>Settle time (hours)</label>
+        <type>text</type>
+        <help>How long a new kernel must have run before the sources of the old one are removed.</help>
+    </field>
+</form>

@@ -1,0 +1,399 @@
+#!/bin/sh
+#-
+# SPDX-License-Identifier: BSD-2-Clause
+# Copyright (c) 2026 Abdelmonem Awad <eg2@live.com>
+#
+# Make every out-of-tree kernel module registered here follow the kernel, in the one window where that
+# is possible: after an update has put a new kernel on disk and before the host boots it.
+#
+#	sh follow.sh                  follow the kernel the next boot will use
+#	DRY=1 sh follow.sh            say what it would do and change nothing
+#	FORCE=1 sh follow.sh          build even when a stamp matches, or when no module is installed yet
+#	ONLY=<name> sh follow.sh      one registration, by the name of its file
+#	NOFETCH=1 ...                 never download kernel sources; build only from what is here
+#	ANYWAY=1 ...                  run although the setting is off - the page's "Follow now"
+#
+# WHY. A FreeBSD module declares its kernel dependency as a range - from the __FreeBSD_version it was
+# compiled with to the end of the branch - so within 15.x `kldload` loads a module built against a
+# different 15.x kernel instead of refusing it, and any structure that moved is read at the wrong
+# offset. Nothing says so. So a module that is not part of OPNsense has to be rebuilt for every kernel
+# an update brings, against that kernel's own sources, and the rebuild has to happen before the boot
+# that loads it. Between the update installing the kernel and the reboot, everything needed is there
+# at once: the old kernel still running, so the network that fetches the sources is up, and the new
+# kernel on disk, naming the commit of its sources. This is that moment, made automatic: it is run by
+# the upgrade hook, by the stop hook of every orderly reboot (bounded), and by cron every five minutes.
+#
+# WHAT IT FOLLOWS. Each file in /usr/local/etc/kernelfollow.d/<name>.conf registers one module,
+# KEY=value a line (docs/registering.md):
+#
+#	MODULE=/boot/modules/<name>.ko        where the module is installed (required)
+#	SOURCES=/usr/local/share/<pkg>/<dir>  its Makefile, *.c and *.h, never built in (required)
+#	ATTACHED=dev.<driver>.0.%desc         a sysctl that exists once the driver is attached (optional)
+#	OWNER=os-<plugin>                     who registered it, for the page (optional)
+#	CRITICAL=yes                          the network needs it: when it cannot be built, the next
+#	                                      boot is sent to the old kernel it matches (default no)
+#
+# Beside each module it keeps <module>.kernel, the kernel it was built for, and when it replaces one
+# built for another kernel, <module>.prev with its own .prev.kernel - so whatever loads the module can
+# refuse a mismatch and fall back to the previous build when the old kernel is booted again.
+#
+# BESIDE os-xgs-npu. This came from os-xgs-npu's install/kernel-follow.sh on 2026-10-22. That
+# follower still runs where os-xgs-npu is installed, for its own two modules (octep.ko, npuep.ko), and
+# os-xgs-npu has not been changed. So while it is installed this one leaves those two modules to it,
+# never touches nextboot unless it set it itself, and leaves the extracted kernel sources in
+# /usr/src-* for it to prune. Two followers building one module into one place would be worse than
+# either alone.
+#
+# WHAT IT WILL NOT DO. It never replaces a working module with one that failed to build, never stamps
+# a module it did not just compile, and never fails an update or a reboot: a failure leaves what is
+# installed where it was and says so in the log, under kernelfollow.
+
+set -u
+
+# One at a time: cron and a hook can start this in the same minute. A second run waits up to fifteen
+# minutes for the first, then finds the stamps right and does nothing.
+: ${LOCK:=/var/run/kernelfollow.lock}
+if [ -z "${KF_LOCKED:-}" ]; then
+	KF_LOCKED=1; export KF_LOCKED
+	exec /usr/bin/lockf -t 900 -k "${LOCK}" /bin/sh "$0" "$@"
+fi
+
+: ${PREFIX:=/usr/local}
+: ${CONFD:=${PREFIX}/etc/kernelfollow.d}
+: ${STATE:=/var/db/os-kernelfollow}
+: ${FETCH:=${PREFIX}/opnsense/scripts/kernelfollow/fetch-sources.sh}
+: ${SRCPOOL:=${PREFIX}/share/os-kernelfollow/kernel-sources}
+: ${SRCROOT:=/usr}
+: ${KERNEL:=/boot/kernel/kernel}
+: ${KERNEL_OLD:=/boot/kernel.old/kernel}
+: ${NEXTBOOT:=/sbin/nextboot}
+: ${WORKPREFIX:=/var/cache/opnsense-update}
+: ${PENDINGDIR:=${WORKPREFIX}/.sets.pending}
+: ${PENDING_KERNEL:=${WORKPREFIX}/.kernel.pending}
+: ${CONF:=/conf/config.xml}
+: ${PROJECT:=${PREFIX}/opnsense/scripts/octep/kernel-follow.sh}
+: ${SYSCTL:=/sbin/sysctl}
+: ${UNAME:=/usr/bin/uname}
+: ${DRY:=0}
+: ${FORCE:=0}
+: ${NOFETCH:=0}
+: ${ONLY:=}
+: ${ANYWAY:=0}
+
+log() {
+	echo "$*"
+	/usr/bin/logger -t kernelfollow -p daemon.notice "$*" 2>/dev/null || true
+}
+warn() {
+	echo "$*" >&2
+	/usr/bin/logger -t kernelfollow -p daemon.err "$*" 2>/dev/null || true
+}
+
+# The plugin's settings, by element name, out of its section of config.xml; the model's defaults when
+# the page was never saved.
+setting() {
+	v=$(/usr/bin/sed -n "/<KernelFollow[ >]/,/<\/KernelFollow>/s:.*<$1>\([0-9]*\)</$1>.*:\1:p" "${CONF}" 2>/dev/null | /usr/bin/head -1)
+	echo "${v:-$2}"
+}
+: ${ENABLED:=$(setting enabled 1)}
+: ${ALLOWFETCH:=$(setting fetch 1)}
+: ${PRUNE:=$(setting prune 1)}
+: ${SETTLE:=$(( $(setting settle_hours 24) * 3600 ))}
+
+# Nothing registered is the usual state of a machine this plugin was only installed on: no kernel is
+# read, nothing is logged, and cron's tick costs one directory listing.
+set -- "${CONFD}"/*.conf
+if [ ! -f "$1" ]; then
+	exit 0
+fi
+
+if [ "${ENABLED}" != 1 ] && [ "${ANYWAY}" != 1 ] && [ "${DRY}" != 1 ]; then
+	log "switched off in the settings; nothing followed"
+	exit 0
+fi
+[ "${ALLOWFETCH}" = 1 ] || NOFETCH=1
+
+# ---------------------------------------------------------------- the kernel to follow
+
+# The kernel the next boot will use, read out of the binary without booting it. At the upgrade hook it
+# is still a set waiting in the pending directory (opnsense-update applies it after the hook), so the
+# staged set is read first and /boot/kernel second.
+version_of_kernel_file() {
+	[ -r "$1" ] || return 1
+	/usr/bin/strings -a "$1" 2>/dev/null | /usr/bin/grep -m1 -E '^FreeBSD [0-9].*stable/[^ ]+' || return 1
+}
+
+kernel_staged() {
+	[ -f "${PENDING_KERNEL}" ] || return 1
+	for set in "${PENDINGDIR}"/kernel-*.txz; do
+		[ -r "${set}" ] || continue
+		v=$(/usr/bin/tar -xOf "${set}" boot/kernel/kernel 2>/dev/null | /usr/bin/strings -a 2>/dev/null |
+		    /usr/bin/grep -m1 -E '^FreeBSD [0-9].*stable/[^ ]+')
+		if [ -n "${v}" ]; then
+			echo "${v}"
+			return 0
+		fi
+	done
+	return 1
+}
+
+TARGET=$(kernel_staged || true)
+if [ -n "${TARGET}" ]; then
+	WHERE="staged, waiting to be applied"
+else
+	TARGET=$(version_of_kernel_file "${KERNEL}" || true)
+	WHERE="${KERNEL}"
+fi
+if [ -z "${TARGET}" ]; then
+	warn "cannot read a kernel version from a staged set or from ${KERNEL}; nothing to follow"
+	exit 0
+fi
+RUNNING=$(${UNAME} -v)
+log "kernel to follow: ${TARGET} (${WHERE})"
+log "kernel running  : ${RUNNING}"
+
+/bin/mkdir -p "${STATE}/results" "${STATE}/build" 2>/dev/null
+
+# What happened to one module, for the page: KEY=value lines, rewritten at every run.
+record() {
+	[ "${DRY}" = 1 ] && return 0
+	{
+		echo "name=$1"
+		echo "result=$2"
+		echo "message=$3"
+		echo "target=${TARGET}"
+		echo "at=$(/bin/date +%s)"
+	} > "${STATE}/results/$1.new" && /bin/mv "${STATE}/results/$1.new" "${STATE}/results/$1"
+}
+
+val() {
+	/usr/bin/sed -n "s/^$1=//p" "$2" | /usr/bin/tail -1
+}
+
+# ---------------------------------------------------------------- the fall-back for a critical module
+
+# When a module the network needs cannot be made to match the new kernel, the next boot is sent to
+# /boot/kernel.old - the kernel the installed module was built for - with nextboot(8), which is one
+# shot: consumed by the boot it steers. The appliance comes up whole, one kernel behind, and the next
+# tick has the network to fetch and build. Marked in ${STATE}/pinned, so this never clears a fall-back
+# somebody else set.
+pin_old_kernel() {
+	OLDV=$(version_of_kernel_file "${KERNEL_OLD}" || true)
+	if [ -z "${OLDV}" ] || [ "${OLDV}" != "$1" ]; then
+		warn "  the module does not match /boot/kernel.old either; falling back would not help"
+		return 1
+	fi
+	if [ ! -x "${NEXTBOOT}" ]; then
+		warn "  no ${NEXTBOOT}, so the next boot cannot be steered"
+		return 1
+	fi
+	if [ "${DRY}" = 1 ]; then
+		log "  DRY=1 - would send the next boot to kernel.old"
+		return 0
+	fi
+	if "${NEXTBOOT}" -k kernel.old > /dev/null 2>&1; then
+		echo "${TARGET}" > "${STATE}/pinned"
+		warn "  the next boot will take /boot/kernel.old, which this module matches"
+		return 0
+	fi
+	warn "  ${NEXTBOOT} -k kernel.old failed"
+	return 1
+}
+
+unpin_old_kernel() {
+	[ -f "${STATE}/pinned" ] || return 0
+	[ "${DRY}" = 1 ] && { log "DRY=1 - would cancel the fall-back to kernel.old this plugin set"; return 0; }
+	"${NEXTBOOT}" -D > /dev/null 2>&1 || true
+	/bin/rm -f "${STATE}/pinned"
+	log "the fall-back to kernel.old this plugin set is cleared; the next boot takes /boot/kernel"
+}
+
+# ---------------------------------------------------------------- the sources, once a run
+
+SYSDIR=
+sources() {
+	[ -n "${SYSDIR}" ] && return 0
+	if [ ! -f "${FETCH}" ]; then
+		warn "  no ${FETCH}, so no kernel sources"
+		return 1
+	fi
+	if [ "${NOFETCH}" = 1 ]; then
+		FETCHLOG=$(NONET=1 SRCPOOL="${SRCPOOL}" /bin/sh "${FETCH}" "${TARGET}" 2>&1)
+	else
+		FETCHLOG=$(SRCPOOL="${SRCPOOL}" /bin/sh "${FETCH}" "${TARGET}" 2>&1)
+	fi
+	SYSDIR=$(echo "${FETCHLOG}" | /usr/bin/sed -n 's/^[[:space:]]*SYSDIR=\([^[:space:]]*\).*/\1/p' | /usr/bin/tail -1)
+	if [ -z "${SYSDIR}" ] || [ ! -f "${SYSDIR}/sys/param.h" ]; then
+		SYSDIR=
+		warn "  could not get kernel sources for ${TARGET}"
+		echo "${FETCHLOG}" | /usr/bin/tail -6 | while read -r l; do warn "    ${l}"; done
+		return 1
+	fi
+	log "  building against ${SYSDIR}"
+}
+
+# ---------------------------------------------------------------- one module
+
+# From nothing, every time: the build directory is emptied and refilled from the pristine sources, so
+# nothing a build for another kernel left behind - kmod.mk's machine link above all, which it never
+# re-points - can reach this one. And the build is checked to have compiled every source file, with its
+# machine headers from this kernel's tree, because "make exited 0" is not enough (os-xgs-npu learned
+# this on 2026-10-02: a module stamped for one kernel, built on another's machine headers).
+build() {
+	name=$1 module=$2 src=$3
+	kmod=$(/usr/bin/basename "${module}" .ko)
+	root="${STATE}/build/${name}"
+	blog="${STATE}/${name}.build.log"
+	if [ ! -f "${src}/Makefile" ]; then
+		warn "  no Makefile in ${src}"
+		return 1
+	fi
+	/bin/rm -rf "${root}" && /bin/mkdir -p "${root}" || return 1
+	/bin/cp "${src}"/Makefile "${root}/" && /bin/cp "${src}"/*.c "${root}/" 2>/dev/null
+	/bin/cp "${src}"/*.h "${root}/" 2>/dev/null
+	if ! ( cd "${root}" && /usr/bin/make SYSDIR="${SYSDIR}" ) > "${blog}" 2>&1; then
+		warn "  the build failed; the whole log is ${blog}"
+		/usr/bin/grep -E ' error:|Error [0-9]' "${blog}" | /usr/bin/head -5 | while read -r l; do warn "    ${l}"; done
+		return 1
+	fi
+	if [ ! -f "${root}/${kmod}.ko" ]; then
+		warn "  the build reported success but produced no ${kmod}.ko"
+		return 1
+	fi
+	nsrc=$(/bin/ls "${root}"/*.c | /usr/bin/wc -l | /usr/bin/tr -d ' ')
+	nobj=$(/bin/ls "${root}"/*.o 2>/dev/null | /usr/bin/wc -l | /usr/bin/tr -d ' ')
+	if [ "${nobj}" -lt "${nsrc}" ]; then
+		warn "  only ${nobj} of ${nsrc} sources were compiled; a partial build is not installed"
+		return 1
+	fi
+	mlink=$(/usr/bin/readlink "${root}/machine" 2>/dev/null || true)
+	case "${mlink}" in
+	"${SYSDIR}"/*) ;;
+	*)
+		warn "  the machine headers came from ${mlink:-nowhere}, not from ${SYSDIR}; not installed"
+		return 1
+		;;
+	esac
+	log "  built $(/usr/bin/stat -f%z "${root}/${kmod}.ko") bytes from ${nsrc} sources"
+	return 0
+}
+
+install_module() {
+	name=$1 module=$2 stamp=$3
+	kmod=$(/usr/bin/basename "${module}" .ko)
+	# The module being replaced is kept, with its stamp, when it is for another kernel: a host that
+	# boots the old kernel again needs it. A rebuild for the same kernel leaves .prev alone.
+	if [ -n "${stamp}" ] && [ "${stamp}" != "${TARGET}" ] && [ -f "${module}" ]; then
+		/bin/cp -p "${module}" "${module}.prev" 2>/dev/null &&
+		    printf '%s\n' "${stamp}" > "${module}.prev.kernel" &&
+		    log "  kept the previous module as ${module}.prev, stamped ${stamp}"
+	fi
+	/bin/mkdir -p "$(/usr/bin/dirname "${module}")"
+	if ! /bin/cp "${STATE}/build/${name}/${kmod}.ko" "${module}.new"; then
+		warn "  could not write ${module}.new; ${module} is untouched"
+		return 1
+	fi
+	printf '%s\n' "${TARGET}" > "${module}.kernel.new"
+	/bin/mv "${module}.new" "${module}"
+	/bin/mv "${module}.kernel.new" "${module}.kernel"
+	/bin/chmod 0555 "${module}" 2>/dev/null || true
+	/bin/chmod 0444 "${module}.kernel" 2>/dev/null || true
+	log "  installed ${module}, stamped for the kernel the next boot will use"
+}
+
+FAILED=0
+ALLMATCH=1
+DETACHED=0
+for conf in "${CONFD}"/*.conf; do
+	[ -f "${conf}" ] || continue
+	name=$(/usr/bin/basename "${conf}" .conf)
+	[ -z "${ONLY}" ] || [ "${ONLY}" = "${name}" ] || continue
+	module=$(val MODULE "${conf}")
+	src=$(val SOURCES "${conf}")
+	critical=$(val CRITICAL "${conf}")
+	log "${name}: ${module:-<no MODULE>}"
+	if [ -z "${module}" ] || [ -z "${src}" ]; then
+		warn "  ${conf} names no MODULE or no SOURCES; skipped"
+		record "${name}" failed "the registration names no MODULE or no SOURCES"
+		continue
+	fi
+	case "$(/usr/bin/basename "${module}")" in
+	octep.ko|npuep.ko)
+		if [ -f "${PROJECT}" ]; then
+			log "  followed by os-xgs-npu's own follower here; left to it"
+			record "${name}" skipped "followed by os-xgs-npu's own follower"
+			continue
+		fi
+		;;
+	esac
+	stamp=$(/bin/cat "${module}.kernel" 2>/dev/null || true)
+	log "  stamp: ${stamp:-<none>}"
+	if [ ! -f "${module}" ] && [ "${FORCE}" != 1 ]; then
+		log "  not installed; nothing to follow"
+		record "${name}" skipped "not installed"
+		continue
+	fi
+	if [ "${stamp}" = "${TARGET}" ] && [ "${FORCE}" != 1 ]; then
+		log "  matches the kernel to follow"
+		record "${name}" ok "matches the kernel to follow"
+		attached=$(val ATTACHED "${conf}")
+		if [ -n "${attached}" ] && [ -z "$(${SYSCTL} -n "${attached}" 2>/dev/null)" ]; then
+			DETACHED=1
+		fi
+		continue
+	fi
+	ALLMATCH=0
+	if [ "${DRY}" = 1 ]; then
+		log "  DRY=1 - would rebuild it for the kernel to follow"
+		continue
+	fi
+	if sources && build "${name}" "${module}" "${src}" && install_module "${name}" "${module}" "${stamp}"; then
+		record "${name}" built "rebuilt for the kernel to follow"
+		continue
+	fi
+	FAILED=1
+	warn "  ${module} is untouched and still matches ${stamp:-<nothing>}"
+	if [ "${critical}" = yes ]; then
+		pin_old_kernel "${stamp}" || warn "  the next boot will load a module built for another kernel, or none"
+	fi
+	record "${name}" failed "could not be rebuilt for the kernel to follow; see ${STATE}/${name}.build.log"
+done
+
+if [ "${FAILED}" = 0 ]; then
+	# Everything matches the kernel on disk now, so a fall-back this plugin set is no longer needed -
+	# only once the kernel to follow is /boot/kernel itself, not a set still waiting.
+	[ "${WHERE}" = "${KERNEL}" ] && unpin_old_kernel
+fi
+
+# ---------------------------------------------------------------- the sources of kernels gone by
+
+# Once the new kernel has proven itself - it is the one running, every module followed matches it and
+# is attached where its registration names a sysctl, and the boot is SETTLE old (a day by default; the
+# owner's condition for os-xgs-npu, 2026-10-21) - the sources of other kernels go: this plugin's pool
+# always, the extracted trees in /usr/src-* only where os-xgs-npu is not installed (its follower prunes
+# them by the same rule there). The running kernel's own sources always stay.
+prune() {
+	[ "${PRUNE}" = 1 ] && [ "${DRY}" != 1 ] && [ "${FAILED}" = 0 ] && [ "${ALLMATCH}" = 1 ] &&
+	    [ "${DETACHED}" = 0 ] || return 0
+	[ "${RUNNING}" = "${TARGET}" ] || return 0
+	booted=$(${SYSCTL} -n kern.boottime 2>/dev/null | /usr/bin/sed -n 's/^{ sec = \([0-9]*\),.*/\1/p')
+	[ -n "${booted}" ] && [ $(( $(/bin/date +%s) - booted )) -ge "${SETTLE}" ] || return 0
+	keep=$(printf '%s\n' "${TARGET}" | /usr/bin/sed -n 's/.*-n[0-9]*-\([0-9a-f][0-9a-f]*\).*/\1/p')
+	[ -n "${keep}" ] || return 0
+	for archive in "${SRCPOOL}"/*.tar.gz "${SRCPOOL}"/*.tgz; do
+		[ -f "${archive}" ] || continue
+		case "${archive##*/}" in *"${keep}"*) continue ;; esac
+		/bin/rm -f "${archive}" && log "removed ${archive}: an archive of a kernel no longer run"
+	done
+	[ -f "${PROJECT}" ] && return 0
+	for tree in "${SRCROOT}"/src-*-*; do
+		printf '%s\n' "${tree##*/}" | /usr/bin/grep -Eq '^src-[0-9][0-9.]*-[0-9a-f]{7,40}$' || continue
+		[ -f "${tree}/sys/sys/param.h" ] || continue
+		case "${tree}" in *"-${keep}") continue ;; esac
+		/bin/rm -rf "${tree}" && log "removed ${tree}: the sources of a kernel this host no longer runs"
+	done
+}
+prune
+
+[ "${DRY}" = 1 ] && log "DRY=1 - nothing changed"
+exit "${FAILED}"

@@ -1,0 +1,14 @@
+<!--
+    SPDX-License-Identifier: BSD-2-Clause
+    Copyright (c) 2026 Abdelmonem Awad <eg2@live.com>
+-->
+<acl>
+    <page-system-kernelfollow>
+        <name>System: Kernel Follower</name>
+        <description>Allow access to the kernel follower: its settings, the registered modules, and rebuilding them now</description>
+        <patterns>
+            <pattern>ui/kernelfollow/*</pattern>
+            <pattern>api/kernelfollow/*</pattern>
+        </patterns>
+    </page-system-kernelfollow>
+</acl>
