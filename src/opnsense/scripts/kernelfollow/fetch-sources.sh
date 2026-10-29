@@ -97,10 +97,10 @@ trap cleanup EXIT
 trap 'exit 1' INT TERM HUP
 
 # ROOM FIRST (2026-10-29). The tree is about 330 MB of sys/, under /usr, on the file system that holds
-# the rest of OPNsense, and nothing looked before writing it: a full disk failed the extraction half
-# way, and the next five-minute tick downloaded the whole tree again. ROOM_MB free is asked of the
-# file system the tree goes to - enough for the tree and as much again for everything else - before
-# anything is unpacked or fetched.
+# the rest of OPNsense, and nothing looked before writing it: a full disk would fail the extraction
+# half way, and the next five-minute tick would download the whole tree again. ROOM_MB free is asked
+# of the file system the tree goes to - enough for the tree and as much again for everything else -
+# before anything is unpacked or fetched.
 : ${ROOM_MB:=800}
 ROOM_KB=$(df -Pk "$(dirname "${DST}")" 2>/dev/null | awk 'NR == 2 {print $4}')
 if [ -n "${ROOM_KB}" ] && [ "${ROOM_KB}" -lt $((ROOM_MB * 1024)) ]; then
