@@ -38,6 +38,7 @@ class ServiceController extends ApiControllerBase
                 'state' => empty($module['installed']) ? 'missing' : (empty($module['matches']) ? 'rebuild' : 'matches'),
                 'followed_by' => (string)($module['followed_by'] ?? ''),
                 'result' => (string)($module['last']['result'] ?? ''),
+                'message' => (string)($module['last']['message'] ?? ''),
                 'at' => (int)($module['last']['at'] ?? 0),
                 'project' => 0,
             ];
@@ -52,6 +53,7 @@ class ServiceController extends ApiControllerBase
                 'state' => empty($module['matches']) ? 'rebuild' : 'matches',
                 'followed_by' => 'os-xgs-npu',
                 'result' => '',
+                'message' => '',
                 'at' => 0,
                 'project' => 1,
             ];

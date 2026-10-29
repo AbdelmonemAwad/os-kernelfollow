@@ -140,6 +140,15 @@
             return Number(row.project) ? '<span class="text-muted">' + html + '</span>' : html;
         }
 
+        /* What the last run did with a module, in the page's language: follow.sh records it as one
+           English word, which the column used to show as it came (2026-10-29). */
+        const results = {
+            ok: "{{ lang._('matches') }}",
+            built: "{{ lang._('rebuilt') }}",
+            failed: "{{ lang._('failed') }}",
+            skipped: "{{ lang._('skipped') }}"
+        };
+
         $('#grid-modules').UIBootgrid({
             search: '/api/kernelfollow/service/search',
             options: {
@@ -162,7 +171,13 @@
                         return quiet(row, row.followed_by === 'this plugin' ? "{{ lang._('this plugin') }}" : row.followed_by);
                     },
                     last: function (column, row) {
-                        return quiet(row, row.result ? row.result + (Number(row.at) ? ', ' + when(Number(row.at)) : '') : '-');
+                        if (!row.result) {
+                            return quiet(row, '-');
+                        }
+                        const text = (results[row.result] || row.result) +
+                            (Number(row.at) ? ', ' + when(Number(row.at)) : '');
+                        /* and what follow.sh said, on hover: why a module failed or was skipped */
+                        return quiet(row, $('<span/>').attr('title', plain(row.message)).text(plain(text))[0].outerHTML);
                     }
                 }
             }
