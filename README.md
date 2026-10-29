@@ -75,10 +75,39 @@ On the first XGS 3300, 2026-10-25, OPNsense 26.7.7 with os-xgs-npu installed, be
 - its menu place: under **XGS** with os-xgs-npu installed; in its own section, **System**, when
   os-xgs-npu's menu file was set aside, and back under XGS when it was put back (`place-menu.sh`).
 
+On a plain OPNsense in qemu, 2026-10-29: the 26.7 nano image, kernel 15.1-RELEASE-p1, with nothing
+of os-xgs-npu on it. Its WAN reached the internet. A small test module, `kfhello`, was registered as
+[docs/registering.md](docs/registering.md) says; it does nothing but load and set
+`debug.kfhello`.
+
+- **The package.** `os-kernelfollow-1.0.0.pkg` and `SHA256SUMS` were fetched from the release and
+  the sum checked OK. `pkg add` returned 0, and the page is under System > Kernel Follower.
+- **A first build.** `FORCE=1 follow.sh` fetched p1's `sys/` from github.com/opnsense/src into
+  `/usr/src-26.7-12334a596709` in about a minute, built the module (11,968 bytes), stamped it for
+  p1, and it loaded.
+- **A real kernel update.** OPNsense 26.7 was updated to 26.7.7 the way the page's Update does it
+  (`configctl firmware update`). Its reboot runs the stop scripts before `shutdown`
+  (`rc.reboot`). Before that reboot the module was rebuilt for the new kernel: p4's sources were
+  fetched over the network into `/usr/src-26.7-abbbe67a45e7`, the module was stamped
+  `15.1-RELEASE-p4`, and the p1 build was kept as `kfhello.ko.prev` with its own stamp. The result,
+  "rebuilt for the kernel to follow", was recorded at 16:15:36, the second the shutdown began. The
+  machine came up on p4, and the module loaded.
+- **`nextboot` itself.** The p1 build was put back as the installed module, the registration set to
+  `CRITICAL=yes`, and the source broken. `follow.sh` failed the build, left the module untouched
+  (same MD5), and wrote `nextboot_enable="YES"`, `kernel="kernel.old"`. The next boot took
+  `/boot/kernel.old` (the loader's menu showed "kernel.old (1 of 2)"), ran p1, and loaded the
+  module. With the source put back, `follow.sh` built for p4, kept the p1 build as `.prev`, and said
+  "the fall-back to kernel.old this plugin set is cleared". The boot after that ran p4.
+- **Pruning.** It ran on p4 with the module attached, using `SETTLE=60` in place of the hours
+  setting, whose least is an hour. It removed `/usr/src-26.7-12334a596709` - "the sources of a
+  kernel this host no longer runs" - and kept p4's.
+
 Not tested: ~~installing it, the page in a browser~~ (both on 2026-10-25, above), a real kernel
-update (staged set, fetch over the network, the hooks), `nextboot` itself, pruning, the package
-(built by `tools/make-package.sh`, added with pkg), and an install on a plain OPNsense, without
-os-xgs-npu.
+update (~~fetch over the network, the hooks~~ on 2026-10-29 in qemu, above; a staged set, which a
+major upgrade leaves, not yet), ~~`nextboot` itself, pruning, the package (built by
+`tools/make-package.sh`, added with pkg), and an install on a plain OPNsense, without os-xgs-npu~~
+(all on 2026-10-29 in qemu, above). Which of the stop script and the five-minute cron rebuilt the
+module during the update is not shown: the system log of that boot did not survive the reboot.
 
 ## Installation
 
