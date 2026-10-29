@@ -18,12 +18,19 @@ differently in the next window.
 
 The Arabic is in opnsense-arabic's catalogue since 2026-10-22 (tools/arabic_catalogue.py), and a
 catalogued string with no Arabic there fails: a string added here needs its Arabic there first.
+
+The forms' labels and help go through the same catalogue - OPNsense translates them when it draws
+the form - so since 2026-10-29 each of them needs its Arabic too, read straight out of forms/*.xml:
+they are not the page's lang._() strings, and source.json does not list them. A model's
+<ValidationMessage> is translated the same way and not checked yet: "Between 1 and 720 hours." has
+no Arabic in the catalogue, and checking it would fail every build until it has.
 """
 import glob
 import json
 import os
 import re
 import sys
+import xml.etree.ElementTree as ET
 
 BS = chr(92)
 Q = chr(39)
@@ -60,11 +67,18 @@ if os.path.exists(os.path.join(scripts, 'alerts.py')):
     mail = set(alerts.mail_strings())
     shared = set(alerts.page_strings())
 
+forms = set()
+for path in sorted(glob.glob('src/opnsense/mvc/app/controllers/OPNsense/*/forms/*.xml')):
+    for node in ET.parse(path).iter():
+        if node.tag in ('label', 'help') and node.text and node.text.strip():
+            forms.add(node.text)
+
 absent = sorted(used - src)
 stale = sorted(src - used - mail)
 missing = sorted(k for k in src if not ar.get(k))
 uncatalogued = sorted(mail - src)
 drifted = sorted(shared - used)
+untranslated_forms = sorted(k for k in forms if not ar.get(k))
 
 print('in templates: %d | in the mail: %d | catalogued: %d | translated in opnsense-arabic: %d'
       % (len(used), len(mail), len(src), len(src) - len(missing)))
@@ -84,9 +98,13 @@ for key in uncatalogued:
 print('the mail says this and the page no longer does: %d' % len(drifted))
 for key in drifted:
     print('   ! ' + key[:100])
+print('form labels and help: %d | with no Arabic in opnsense-arabic: %d'
+      % (len(forms), len(untranslated_forms)))
+for key in untranslated_forms[:25]:
+    print('   ? ' + key[:100])
 
 # The two faults that make a message lie are fatal, and so is a catalogued string with no
-# Arabic - a step of the workflow enforced that one until 2026-10-22. The other two counts
-# are reported and not enforced, as they always were: the form XML and the PHP say plenty
-# that no .volt asks for, and that is not a bug.
-sys.exit(1 if uncatalogued or drifted or missing else 0)
+# Arabic - a step of the workflow enforced that one until 2026-10-22 - and, since 2026-10-29, a
+# form label or help with none. The other two counts are reported and not enforced, as they
+# always were: the form XML and the PHP say plenty that no .volt asks for, and that is not a bug.
+sys.exit(1 if uncatalogued or drifted or missing or untranslated_forms else 0)
