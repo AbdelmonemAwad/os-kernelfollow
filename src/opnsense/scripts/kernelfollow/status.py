@@ -80,12 +80,19 @@ def read(path):
 
 
 def keys(path):
-    """KEY=value lines, the last of each key winning, as follow.sh reads them."""
+    """KEY=value lines, read as follow.sh's val() reads them (2026-10-29; until then follow.sh took
+    a key only at the start of a line and its value as it stood, and the two could disagree about one
+    file): spaces around either side and carriage returns ignored, one pair of quotes around the
+    value taken off, a line starting with # skipped, the last line for a key winning."""
     out = {}
-    for line in (read(path) or '').splitlines():
-        if '=' in line and not line.lstrip().startswith('#'):
-            key, value = line.split('=', 1)
-            out[key.strip()] = value.strip()
+    for line in (read(path) or '').replace('\r', '').split('\n'):
+        if '=' not in line or line.lstrip().startswith('#'):
+            continue
+        key, value = line.split('=', 1)
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in '"\'':
+            value = value[1:-1]
+        out[key.strip()] = value
     return out
 
 

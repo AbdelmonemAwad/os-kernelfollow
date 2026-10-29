@@ -20,8 +20,12 @@ CRITICAL=no
 | `OWNER` | no | who registered it, shown on the page |
 | `CRITICAL` | no | `yes` when the network depends on the module: if it cannot be rebuilt, the next boot is sent to `/boot/kernel.old`, which it matches |
 
-One `KEY=value` a line; the file is read, never executed. The module's `Makefile` builds `<name>.ko`,
-where `<name>` is the file name of `MODULE` without `.ko` - the usual `KMOD=` line does that.
+One `KEY=value` a line; the file is read, never executed. The follower and the page read it the same
+way (since 2026-10-29): spaces around the `=` and at either end of a line are ignored, and so is a
+carriage return; one pair of quotes around a value, `"..."` or `'...'`, is taken off; a line
+starting with `#` is skipped; and the last line for a key wins. The module's `Makefile` builds
+`<name>.ko`, where `<name>` is the file name of `MODULE` without `.ko` - the usual `KMOD=` line does
+that.
 
 ## What the follower keeps beside the module
 

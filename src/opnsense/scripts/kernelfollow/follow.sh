@@ -118,9 +118,15 @@ setting() {
 : ${PRUNE:=$(setting prune 1)}
 : ${SETTLE:=$(( $(setting settle_hours 24) * 3600 ))}
 
-# One value out of a registration: the last KEY=value line for the key.
+# One value out of a registration, read as status.py reads it (2026-10-29: the page said "to rebuild"
+# of a file in which this found no MODULE): KEY=value, spaces around either side and a carriage
+# return ignored, one pair of quotes around the value taken off, a line starting with # skipped, the
+# last line for a key winning.
 val() {
-	/usr/bin/sed -n "s/^$1=//p" "$2" | /usr/bin/tail -1
+	/usr/bin/tr -d '\r' < "$2" |
+	    /usr/bin/sed -n -e '/^[[:space:]]*#/d' -e "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" |
+	    /usr/bin/tail -1 |
+	    /usr/bin/sed -e 's/[[:space:]]*$//' -e "s/^\([\"']\)\(.*\)\1\$/\2/"
 }
 
 # Nothing registered is the usual state of a machine this plugin was only installed on: no kernel is
