@@ -38,8 +38,10 @@ Rebuilds an out-of-tree FreeBSD kernel module for the kernel an OPNsense update 
 - **removes the sources of kernels no longer run** once the new kernel has run a day (a setting),
   with every module matching it and attached;
 - **System: Kernel Follower** (XGS: Kernel Follower when os-xgs-npu is installed): the kernel
-  running and the one the next boot takes, each module against it, the sources on disk, the last
-  run, **Check** (what a run would do) and **Follow now**.
+  running and the one the next boot takes, each module against it and what the last run did with
+  it, the sources on disk, ~~the last run~~ the output of the last **Follow now** (in a tab of its
+  own, called Last run until 2026-10-29 although nothing else wrote to it), **Check** (what a run
+  would do) and **Follow now**.
 
 A plugin registers its module with one file in `/usr/local/etc/kernelfollow.d/` -
 [docs/registering.md](docs/registering.md).
@@ -129,14 +131,20 @@ for 26.7's FreeBSD 15) - and `kfhello` registered and built for the running kern
   itself. After the upgrade's reboots the machine ran OPNsense 26.7.7 on that kernel; the module's
   stamp matched it, and it loaded. Three later runs, two before the reboot and one after it, found
   the stamp matching and changed nothing.
+- **Which run rebuilds at an ordinary update.** On the same machine, 2026-10-29, with `/var/log` on
+  the disk: an ordinary update (`configctl firmware update`, 26.1.6 to 26.1.11) rebooted the machine
+  by itself, and Kernel Follower ran at 18:47:53 - not a five-minute mark - read the newly installed
+  p16 `/boot/kernel/kernel`, built and installed the module by 18:48:48, and the machine then
+  rebooted: the stop script at the update's reboot rebuilt it.
 
 Not tested: ~~installing it, the page in a browser~~ (both on 2026-10-25, above), ~~a real kernel
 update (fetch over the network, the hooks~~ on 2026-10-29 in qemu, above; ~~a staged set, which a
 major upgrade leaves, not yet)~~ (on 2026-10-29 in qemu, above), ~~`nextboot` itself, pruning, the
 package (built by `tools/make-package.sh`, added with pkg), and an install on a plain OPNsense,
-without os-xgs-npu~~ (all on 2026-10-29 in qemu, above). Which of the stop script and the
+without os-xgs-npu~~ (all on 2026-10-29 in qemu, above). ~~Which of the stop script and the
 five-minute cron rebuilt the module during an update, as against a major upgrade, is not shown: the
-system log of that boot did not survive the reboot.
+system log of that boot did not survive the reboot.~~ It was the stop script: measured on the 26.1
+machine with `/var/log` on the disk, 2026-10-29 (above).
 
 ## Installation
 
@@ -157,8 +165,9 @@ checkout are copied into the pool, so a machine without internet can build.
 sources.
 
 **From a release's package.** A release carries `os-kernelfollow-<version>.pkg` and `SHA256SUMS`,
-built by `tools/make-package.sh` in the release workflow; installing it has not been tested yet.
-Check it and read it before adding it, as root:
+built by `tools/make-package.sh` in the release workflow; ~~installing it has not been tested yet~~
+it was installed with `pkg add` on a plain OPNsense 26.7 on 2026-10-29 - see
+[What is tested](#what-is-tested). Check it and read it before adding it, as root:
 
 ```sh
 sha256sum -c SHA256SUMS

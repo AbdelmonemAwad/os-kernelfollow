@@ -302,7 +302,9 @@
 <ul class="nav nav-tabs" data-tabs="tabs" id="maintabs">
     <li class="active"><a data-toggle="tab" href="#modules">{{ lang._('Modules') }}</a></li>
     <li><a data-toggle="tab" href="#settings">{{ lang._('Settings') }}</a></li>
-    <li><a data-toggle="tab" href="#lastrun">{{ lang._('Last run') }}</a></li>
+    {# The output of the last Follow now, which alone writes last-run.log: the tab was called
+       Last run until 2026-10-29, while the five-minute run and the hooks never wrote to it. #}
+    <li><a data-toggle="tab" href="#lastrun">{{ lang._('Follow now') }}</a></li>
 </ul>
 
 <div class="tab-content content-box">

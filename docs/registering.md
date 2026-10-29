@@ -39,6 +39,21 @@ module built for another kernel of the same branch loads without complaint and r
 structures at the wrong offsets - and take `<MODULE>.prev` when its stamp is the one that matches.
 That part is the owner's: the follower builds and stamps, it does not load.
 
+## When the sources change
+
+The follower rebuilds a module when its stamp names another kernel than the one to follow - not
+when its sources change. A new version of the module's sources, with the kernel the same, still
+matches the stamp, and neither the five-minute run nor **Follow now** builds it again. The plugin
+that changed `SOURCES` asks for the build itself, in its install or update, by the name of its
+registration's file:
+
+```sh
+FORCE=1 ONLY=hello sh /usr/local/opnsense/scripts/kernelfollow/follow.sh
+```
+
+`FORCE=1` builds although the stamp matches; `ONLY=hello` keeps it to `hello.conf`. The build is
+checked and installed as any other, and `<MODULE>.prev` is left as it is, the kernel being the same.
+
 ## Removing a registration
 
 Delete the file. The module and its stamps stay where they are.
