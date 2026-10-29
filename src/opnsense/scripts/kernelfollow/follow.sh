@@ -56,9 +56,9 @@ set -u
 # minutes for the first, then finds the stamps right and does nothing.
 #
 # A DRY run waits for nothing (2026-10-29): it is the page's Check and the installer's last look, it
-# changes nothing, and fifteen minutes behind a fetch outlasted the page, which gave up on it with
-# nothing to show while the run went on waiting. It says that a run is under way - which the page
-# shows too - and ends.
+# changes nothing, and fifteen minutes behind a fetch is longer than the page waits for an answer, so
+# the page was left with nothing to show while the Check went on waiting. It says that a run is under
+# way - which the page shows too - and ends.
 : ${LOCK:=/var/run/kernelfollow.lock}
 if [ -z "${KF_LOCKED:-}" ]; then
 	KF_LOCKED=1; export KF_LOCKED
@@ -118,10 +118,10 @@ setting() {
 : ${PRUNE:=$(setting prune 1)}
 : ${SETTLE:=$(( $(setting settle_hours 24) * 3600 ))}
 
-# One value out of a registration, read as status.py reads it (2026-10-29: the page said "to rebuild"
-# of a file in which this found no MODULE): KEY=value, spaces around either side and a carriage
-# return ignored, one pair of quotes around the value taken off, a line starting with # skipped, the
-# last line for a key winning.
+# One value out of a registration, read as status.py reads it (2026-10-29: the two read a file
+# differently, and the page could say "to rebuild" of a file in which this found no MODULE):
+# KEY=value, spaces around either side and a carriage return ignored, one pair of quotes around the
+# value taken off, a line starting with # skipped, the last line for a key winning.
 val() {
 	/usr/bin/tr -d '\r' < "$2" |
 	    /usr/bin/sed -n -e '/^[[:space:]]*#/d' -e "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" |
