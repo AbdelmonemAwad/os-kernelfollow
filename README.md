@@ -52,7 +52,10 @@ its follower still runs where it is installed, for its own two modules. So while
 this plugin:
 
 - leaves `octep.ko` and `npuep.ko` to it, and only shows them;
-- touches `nextboot` only to cancel a fall-back it set itself, never one os-xgs-npu set;
+- touches `nextboot` only to cancel a fall-back it set itself, ~~never one os-xgs-npu set~~ and not
+  while `octep.ko` or `npuep.ko` is built for another kernel than the one to follow: `nextboot`
+  holds one fall-back for the whole host, and os-xgs-npu sets the same one, so cancelling this
+  plugin's could cancel os-xgs-npu's (since 2026-10-29);
 - leaves the extracted kernel sources in `/usr/src-*` for os-xgs-npu to remove.
 
 When os-xgs-npu hands its modules over is its owner's decision; nothing here changes it.

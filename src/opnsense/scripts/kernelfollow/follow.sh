@@ -271,8 +271,28 @@ pin_old_kernel() {
 	return 1
 }
 
+# ONE FALL-BACK FOR THE WHOLE HOST (2026-10-29). nextboot holds one, and os-xgs-npu's follower sets the
+# same - `nextboot -k kernel.old` - for octep.ko and npuep.ko. Clearing it because this plugin's own
+# module was rebuilt clears os-xgs-npu's too: at a reboot its stop hook (20) runs before this one (21),
+# so an octep.ko it could not rebuild, and sent to kernel.old, would meet the new kernel, and an XGS
+# come up with no front ports. While either module is installed and stamped for a kernel other than
+# the one to follow, only this plugin's own mark goes, and the fall-back stays.
+: ${PROJECT_MODULES:=/boot/modules/octep.ko /boot/modules/npuep.ko}
 unpin_old_kernel() {
 	[ -f "${STATE}/pinned" ] || return 0
+	for m in ${PROJECT_MODULES}; do
+		[ -f "${m}" ] || continue
+		s=$(/bin/cat "${m}.kernel" 2>/dev/null || true)
+		[ "${s}" = "${TARGET}" ] && continue
+		if [ "${DRY}" = 1 ]; then
+			log "DRY=1 - would leave the fall-back to kernel.old for ${m##*/}, built for ${s:-no kernel}"
+			return 0
+		fi
+		/bin/rm -f "${STATE}/pinned"
+		log "this plugin needs the fall-back to kernel.old no longer; it stays for ${m##*/}," \
+		    "built for ${s:-no kernel}"
+		return 0
+	done
 	[ "${DRY}" = 1 ] && { log "DRY=1 - would cancel the fall-back to kernel.old this plugin set"; return 0; }
 	"${NEXTBOOT}" -D > /dev/null 2>&1 || true
 	/bin/rm -f "${STATE}/pinned"
