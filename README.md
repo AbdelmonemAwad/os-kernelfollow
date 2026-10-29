@@ -21,7 +21,10 @@ Rebuilds an out-of-tree FreeBSD kernel module for the kernel an OPNsense update 
   yet, or `/boot/kernel` - out of the binary, without booting it, and compares it with the stamp
   beside each module registered with it;
 - **rebuilds a module that does not match**: that kernel's sources, from an archive carried on the
-  machine or from `github.com/opnsense/src` at the commit the kernel names (only `sys/` kept); the
+  machine or from `github.com/opnsense/src` at the commit the kernel names (only `sys/` kept) - since
+  2026-10-29 only with 800 MB free under `/usr`, never leaving a tree half written, and, after a
+  failed fetch, with an hour before the five-minute run fetches the same sources again (the hooks
+  and **Follow now** fetch at once); the
   build from nothing, in a directory emptied first; checked to have compiled every source with the
   machine headers of that kernel; installed under a temporary name and moved into place, stamped,
   the previous build kept beside it as `.prev` with its own stamp;

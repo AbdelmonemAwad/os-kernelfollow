@@ -12,6 +12,8 @@
 #	ONLY=<name> sh follow.sh      one registration, by the name of its file
 #	NOFETCH=1 ...                 never download kernel sources; build only from what is here
 #	ANYWAY=1 ...                  run although the setting is off - the page's "Follow now"
+#	TICK=1 ...                    the five-minute cron run: after a failed fetch, an hour before the
+#	                              same sources are fetched again
 #
 # WHY. A FreeBSD module declares its kernel dependency as a range - from the __FreeBSD_version it was
 # compiled with to the end of the branch - so within 15.x `kldload` loads a module built against a
@@ -79,6 +81,7 @@ fi
 : ${NOFETCH:=0}
 : ${ONLY:=}
 : ${ANYWAY:=0}
+: ${TICK:=0}
 
 log() {
 	echo "$*"
@@ -175,6 +178,8 @@ if [ -z "${TARGET}" ]; then
 	exit 0
 fi
 RUNNING=$(${UNAME} -v)
+# the commit of the kernel to follow's sources, as fetch-sources.sh names its tree after it
+TSHA=$(printf '%s\n' "${TARGET}" | /usr/bin/sed -n 's/.*-n[0-9]*-\([0-9a-f][0-9a-f]*\).*/\1/p')
 
 # What this run will say, and whether anything is left to do: a module installed and stamped for
 # another kernel, or anything at all with FORCE=1. A registration that names no module or no sources
@@ -261,6 +266,24 @@ unpin_old_kernel() {
 
 # ---------------------------------------------------------------- the sources, once a run
 
+# AN HOUR BETWEEN FETCHES THAT FAIL, for the five-minute tick (2026-10-29). When a fetch failed - a
+# full disk, a download cut short, sources that were not what was expected - the next tick fetched
+# the whole tree again, about 350 MB, and so on every five minutes for as long as the cause stayed.
+# A failed fetch is kept in ${STATE}/fetch-failed with the commit and the boot it was for, and a tick
+# in the same boot, for the same commit, within the hour, builds only from sources already on the
+# machine. The upgrade and stop hooks and Follow now always fetch - they are the moments that count -
+# and a reboot lets the next tick fetch at once: a host that came up on kernel.old has its network.
+FAILED_AT=
+held() {
+	[ "${TICK}" = 1 ] && [ -f "${STATE}/fetch-failed" ] || return 1
+	read -r fsha fat fboot < "${STATE}/fetch-failed" || [ -n "${fsha:-}" ] || return 1
+	case "${fat:-}" in ''|*[!0-9]*) return 1 ;; esac
+	[ "${fsha}" = "$1" ] && [ "${fboot:-}" = "${BOOTED}" ] &&
+	    [ $(( $(/bin/date +%s) - fat )) -lt 3600 ] || return 1
+	FAILED_AT=$(/bin/date -r "${fat}" '+%H:%M' 2>/dev/null)
+	return 0
+}
+
 SYSDIR=
 sources() {
 	[ -n "${SYSDIR}" ] && return 0
@@ -268,7 +291,13 @@ sources() {
 		warn "  no ${FETCH}, so no kernel sources"
 		return 1
 	fi
-	if [ "${NOFETCH}" = 1 ]; then
+	nonet=${NOFETCH}
+	if [ "${nonet}" != 1 ] && held "${TSHA}"; then
+		nonet=1
+		warn "  the sources of ${TSHA} could not be fetched at ${FAILED_AT:-the last try};" \
+		    "the five-minute run fetches them again an hour after that - the hooks and Follow now at once"
+	fi
+	if [ "${nonet}" = 1 ]; then
 		FETCHLOG=$(NONET=1 SRCPOOL="${SRCPOOL}" /bin/sh "${FETCH}" "${TARGET}" 2>&1)
 	else
 		FETCHLOG=$(SRCPOOL="${SRCPOOL}" /bin/sh "${FETCH}" "${TARGET}" 2>&1)
@@ -276,10 +305,13 @@ sources() {
 	SYSDIR=$(echo "${FETCHLOG}" | /usr/bin/sed -n 's/^[[:space:]]*SYSDIR=\([^[:space:]]*\).*/\1/p' | /usr/bin/tail -1)
 	if [ -z "${SYSDIR}" ] || [ ! -f "${SYSDIR}/sys/param.h" ]; then
 		SYSDIR=
+		# kept only where this run was let fetch: one that was held, or told not to, tried nothing new
+		[ "${nonet}" = 1 ] || echo "${TSHA} $(/bin/date +%s) ${BOOTED}" > "${STATE}/fetch-failed"
 		warn "  could not get kernel sources for ${TARGET}"
 		echo "${FETCHLOG}" | /usr/bin/tail -6 | while read -r l; do warn "    ${l}"; done
 		return 1
 	fi
+	/bin/rm -f "${STATE}/fetch-failed"
 	log "  building against ${SYSDIR}"
 }
 
@@ -442,6 +474,15 @@ prune() {
 		[ -f "${tree}/sys/sys/param.h" ] || continue
 		case "${tree}" in *"-${keep}") continue ;; esac
 		/bin/rm -rf "${tree}" && log "removed ${tree}: the sources of a kernel this host no longer runs"
+	done
+	# A tree half written, under a name the loop above does not take: what a fetch killed before its
+	# trap could run leaves (2026-10-29). An hour old at least, so that a fetch started by hand a
+	# minute ago keeps its own.
+	for part in "${SRCROOT}"/src-*-*.partial; do
+		[ -d "${part}" ] || continue
+		printf '%s\n' "${part##*/}" | /usr/bin/grep -Eq '^src-[0-9][0-9.]*-[0-9a-f]{7,40}\.partial$' || continue
+		[ -n "$(/usr/bin/find "${part}" -maxdepth 0 -mmin +60 2>/dev/null)" ] || continue
+		/bin/rm -rf "${part}" && log "removed ${part}: a tree a fetch left half written"
 	done
 }
 prune
