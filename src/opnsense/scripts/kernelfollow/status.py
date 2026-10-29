@@ -17,6 +17,7 @@ second - out of the binary, without booting it.
 import fcntl
 import glob
 import json
+import lzma
 import os
 import re
 import subprocess
@@ -38,14 +39,28 @@ def version_in(data):
     return found.group(0).decode('ascii', 'replace').strip() if found else None
 
 
+def kernel_in_set(path):
+    """The banner of the kernel in a staged set, out of its boot/kernel/kernel member - named so or
+    './boot/kernel/kernel', as a set can name it. The members are read in order and the rest of the
+    set is never unpacked (2026-10-29): extractfile() by name first listed the whole set, raised
+    KeyError where the first name was not the set's, and so never tried the second."""
+    with tarfile.open(path, 'r:xz') as archive:
+        for member in archive:
+            name = member.name
+            while name.startswith('./'):
+                name = name[2:]
+            if name == 'boot/kernel/kernel' and member.isfile():
+                handle = archive.extractfile(member)
+                return version_in(handle.read()) if handle else None
+    return None
+
+
 def kernel_to_follow():
     if os.path.exists(os.path.join(WORKPREFIX, '.kernel.pending')):
         for path in sorted(glob.glob(os.path.join(WORKPREFIX, '.sets.pending', 'kernel-*.txz'))):
             try:
-                with tarfile.open(path, 'r:xz') as archive:
-                    member = archive.extractfile('./boot/kernel/kernel') or archive.extractfile('boot/kernel/kernel')
-                    found = version_in(member.read()) if member else None
-            except (OSError, KeyError, tarfile.TarError):
+                found = kernel_in_set(path)
+            except (OSError, EOFError, lzma.LZMAError, tarfile.TarError):
                 found = None
             if found:
                 return found, 'staged'
