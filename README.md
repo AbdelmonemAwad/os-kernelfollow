@@ -27,7 +27,8 @@ Rebuilds an out-of-tree FreeBSD kernel module for the kernel an OPNsense update 
   the previous build kept beside it as `.prev` with its own stamp;
 - **runs when it matters**: the upgrade hook, the stop hook of every orderly reboot (at most ten
   minutes, so a fetch that will not finish never holds the machine), and cron every five minutes.
-  With nothing registered each of these is a directory listing;
+  With nothing registered each of these is a directory listing; with nothing to do, the log hears
+  so once a boot and again when something changes, not at every tick (since 2026-10-29);
 - **for a module the network needs** (`CRITICAL=yes`), when it cannot be rebuilt, sends the next
   boot to `/boot/kernel.old`, which the installed module matches, with `nextboot -k` - one shot -
   and cancels that itself once the module is rebuilt;

@@ -100,6 +100,11 @@ setting() {
 : ${PRUNE:=$(setting prune 1)}
 : ${SETTLE:=$(( $(setting settle_hours 24) * 3600 ))}
 
+# One value out of a registration: the last KEY=value line for the key.
+val() {
+	/usr/bin/sed -n "s/^$1=//p" "$2" | /usr/bin/tail -1
+}
+
 # Nothing registered is the usual state of a machine this plugin was only installed on: no kernel is
 # read, nothing is logged, and cron's tick costs one directory listing.
 set -- "${CONFD}"/*.conf
@@ -107,8 +112,29 @@ if [ ! -f "$1" ]; then
 	exit 0
 fi
 
+# NOTHING TO DO IS SAID ONCE, as os-xgs-npu's follower has said it since 2026-10-28. The cron entry
+# runs this every five minutes, and with one module registered and matching it logged five Notices
+# each time - 1440 in a day - that the module already matched, and one a tick that the plugin was
+# switched off. Those lines go to the log once for each boot, and again whenever what they say
+# changes - a kernel staged, a module rebuilt, a registration added - and to the screen of whoever
+# runs this by hand every time. Anything that is not "nothing to do" is logged as it always was
+# (2026-10-29).
+: ${SAID:=${STATE}/said}
+BOOTED=$(${SYSCTL} -n kern.boottime 2>/dev/null | /usr/bin/sed -n 's/^{ sec = \([0-9]*\),.*/\1/p')
+SAYING=
+quiet=0
+note() { if [ "${quiet}" = 1 ]; then echo "$*"; else log "$*"; fi; }
+notew() { if [ "${quiet}" = 1 ]; then echo "$*" >&2; else warn "$*"; fi; }
+said() {
+	[ "${DRY}" = 1 ] || [ "$(/bin/cat "${SAID}" 2>/dev/null)" = "${SAYING}" ] ||
+	    { /bin/mkdir -p "${SAID%/*}" && echo "${SAYING}" > "${SAID}"; } 2>/dev/null
+}
+
 if [ "${ENABLED}" != 1 ] && [ "${ANYWAY}" != 1 ] && [ "${DRY}" != 1 ]; then
-	log "switched off in the settings; nothing followed"
+	SAYING="${BOOTED}|switched off"
+	[ "$(/bin/cat "${SAID}" 2>/dev/null)" = "${SAYING}" ] && quiet=1
+	note "switched off in the settings; nothing followed"
+	said
 	exit 0
 fi
 [ "${ALLOWFETCH}" = 1 ] || NOFETCH=1
@@ -149,8 +175,37 @@ if [ -z "${TARGET}" ]; then
 	exit 0
 fi
 RUNNING=$(${UNAME} -v)
-log "kernel to follow: ${TARGET} (${WHERE})"
-log "kernel running  : ${RUNNING}"
+
+# What this run will say, and whether anything is left to do: a module installed and stamped for
+# another kernel, or anything at all with FORCE=1. A registration that names no module or no sources
+# is said once too - it stays as it is until somebody edits it, and every tick would say the same.
+SAYING="${BOOTED}|${TARGET}|${WHERE}|${RUNNING}"
+WORK=0
+for conf in "${CONFD}"/*.conf; do
+	[ -f "${conf}" ] || continue
+	name=$(/usr/bin/basename "${conf}" .conf)
+	module=$(val MODULE "${conf}")
+	src=$(val SOURCES "${conf}")
+	stamp=
+	[ -z "${module}" ] || stamp=$(/bin/cat "${module}.kernel" 2>/dev/null || true)
+	installed=0
+	[ -n "${module}" ] && [ -f "${module}" ] && installed=1
+	SAYING="${SAYING}|${name}=${module}:${installed}:${stamp}"
+	[ -z "${ONLY}" ] || [ "${ONLY}" = "${name}" ] || continue
+	[ -n "${module}" ] && [ -n "${src}" ] || continue
+	case "$(/usr/bin/basename "${module}")" in
+	octep.ko|npuep.ko) [ -f "${PROJECT}" ] && continue ;;
+	esac
+	[ "${installed}" = 0 ] && [ "${FORCE}" != 1 ] && continue
+	[ "${stamp}" = "${TARGET}" ] && [ "${FORCE}" != 1 ] && continue
+	WORK=1
+done
+if [ "${FORCE}" != 1 ] && [ "${WORK}" = 0 ] && [ "$(/bin/cat "${SAID}" 2>/dev/null)" = "${SAYING}" ]; then
+	quiet=1
+fi
+
+note "kernel to follow: ${TARGET} (${WHERE})"
+note "kernel running  : ${RUNNING}"
 
 /bin/mkdir -p "${STATE}/results" "${STATE}/build" 2>/dev/null
 
@@ -164,10 +219,6 @@ record() {
 		echo "target=${TARGET}"
 		echo "at=$(/bin/date +%s)"
 	} > "${STATE}/results/$1.new" && /bin/mv "${STATE}/results/$1.new" "${STATE}/results/$1"
-}
-
-val() {
-	/usr/bin/sed -n "s/^$1=//p" "$2" | /usr/bin/tail -1
 }
 
 # ---------------------------------------------------------------- the fall-back for a critical module
@@ -311,30 +362,30 @@ for conf in "${CONFD}"/*.conf; do
 	module=$(val MODULE "${conf}")
 	src=$(val SOURCES "${conf}")
 	critical=$(val CRITICAL "${conf}")
-	log "${name}: ${module:-<no MODULE>}"
+	note "${name}: ${module:-<no MODULE>}"
 	if [ -z "${module}" ] || [ -z "${src}" ]; then
-		warn "  ${conf} names no MODULE or no SOURCES; skipped"
+		notew "  ${conf} names no MODULE or no SOURCES; skipped"
 		record "${name}" failed "the registration names no MODULE or no SOURCES"
 		continue
 	fi
 	case "$(/usr/bin/basename "${module}")" in
 	octep.ko|npuep.ko)
 		if [ -f "${PROJECT}" ]; then
-			log "  followed by os-xgs-npu's own follower here; left to it"
+			note "  followed by os-xgs-npu's own follower here; left to it"
 			record "${name}" skipped "followed by os-xgs-npu's own follower"
 			continue
 		fi
 		;;
 	esac
 	stamp=$(/bin/cat "${module}.kernel" 2>/dev/null || true)
-	log "  stamp: ${stamp:-<none>}"
+	note "  stamp: ${stamp:-<none>}"
 	if [ ! -f "${module}" ] && [ "${FORCE}" != 1 ]; then
-		log "  not installed; nothing to follow"
+		note "  not installed; nothing to follow"
 		record "${name}" skipped "not installed"
 		continue
 	fi
 	if [ "${stamp}" = "${TARGET}" ] && [ "${FORCE}" != 1 ]; then
-		log "  matches the kernel to follow"
+		note "  matches the kernel to follow"
 		record "${name}" ok "matches the kernel to follow"
 		attached=$(val ATTACHED "${conf}")
 		if [ -n "${attached}" ] && [ -z "$(${SYSCTL} -n "${attached}" 2>/dev/null)" ]; then
@@ -395,5 +446,6 @@ prune() {
 }
 prune
 
-[ "${DRY}" = 1 ] && log "DRY=1 - nothing changed"
+[ "${WORK}" = 1 ] || said
+[ "${DRY}" = 1 ] && note "DRY=1 - nothing changed"
 exit "${FAILED}"
