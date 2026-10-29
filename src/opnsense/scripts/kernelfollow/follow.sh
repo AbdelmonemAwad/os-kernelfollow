@@ -54,9 +54,24 @@ set -u
 
 # One at a time: cron and a hook can start this in the same minute. A second run waits up to fifteen
 # minutes for the first, then finds the stamps right and does nothing.
+#
+# A DRY run waits for nothing (2026-10-29): it is the page's Check and the installer's last look, it
+# changes nothing, and fifteen minutes behind a fetch outlasted the page, which gave up on it with
+# nothing to show while the run went on waiting. It says that a run is under way - which the page
+# shows too - and ends.
 : ${LOCK:=/var/run/kernelfollow.lock}
 if [ -z "${KF_LOCKED:-}" ]; then
 	KF_LOCKED=1; export KF_LOCKED
+	if [ "${DRY:-0}" = 1 ]; then
+		/usr/bin/lockf -s -t 0 -k "${LOCK}" /bin/sh "$0" "$@"
+		rc=$?
+		# 75 is lockf's own EX_TEMPFAIL: somebody holds the lock
+		if [ "${rc}" = 75 ]; then
+			echo "a run is under way; check again when it has finished"
+			exit 0
+		fi
+		exit "${rc}"
+	fi
 	exec /usr/bin/lockf -t 900 -k "${LOCK}" /bin/sh "$0" "$@"
 fi
 

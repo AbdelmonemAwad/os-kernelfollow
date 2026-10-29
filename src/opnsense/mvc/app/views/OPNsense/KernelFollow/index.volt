@@ -115,7 +115,10 @@
 
             $('#kf-trees').text(data.trees.length ? data.trees.join('  ') : '-');
             $('#kf-lastrun').text(data.last_run && data.last_run.length ? data.last_run.join('\n') : '-');
+            /* Neither button while a run is under way: Follow now would wait behind it, and Check
+               would only say that a run is under way (2026-10-29). */
             $('#runAct').prop('disabled', !!data.running_now);
+            $('#checkAct').prop('disabled', !!data.running_now);
             if (data.running_now && !polling) {
                 polling = setInterval(refresh, 5000);
             } else if (!data.running_now && polling) {
@@ -213,6 +216,7 @@
             ajaxCall('/api/kernelfollow/service/check', {}, function (data) {
                 $button.prop('disabled', false);
                 $('#kf-check').text(data && data.output ? data.output : '-').show();
+                read_state();
             });
         });
 

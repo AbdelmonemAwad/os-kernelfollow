@@ -9,10 +9,17 @@
 #
 # It never fails an update: every path exits 0, and a failure is a warning in the log under
 # kernelfollow. With nothing registered, follow.sh returns at once.
+#
+# Bounded since 2026-10-29, as the stop hook always was: half an hour - the fifteen minutes a run can
+# wait for another's lock, then a fetch and a build - so that a fetch that will not finish cannot hold
+# System: Firmware's upgrade with nothing on its screen. The stop hook tries again at the reboot that
+# follows, and the five-minute run after it.
 FOLLOW=/usr/local/opnsense/scripts/kernelfollow/follow.sh
+: ${LIMIT:=1800}
 [ -f "${FOLLOW}" ] || exit 0
-if ! OUT=$(/bin/sh "${FOLLOW}" 2>&1); then
-	/usr/bin/logger -t kernelfollow -p daemon.err "a module could NOT be rebuilt for the kernel this update installed"
+if ! OUT=$(/usr/bin/timeout -k 10 "${LIMIT}" /bin/sh "${FOLLOW}" 2>&1); then
+	/usr/bin/logger -t kernelfollow -p daemon.err \
+	    "a module could NOT be rebuilt for the kernel this update installed, or not within ${LIMIT}s"
 	echo "${OUT}" | /usr/bin/tail -8 | while read -r l; do
 		/usr/bin/logger -t kernelfollow -p daemon.err "  ${l}"
 	done
