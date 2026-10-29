@@ -1,4 +1,20 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/readme/banner-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/readme/banner-light.svg">
+  <img src="docs/images/readme/banner-light.svg" alt="os-kernelfollow - Out-of-tree kernel modules rebuilt for the kernel an update brings" width="100%">
+</picture>
+
 # Kernel Follower for OPNsense
+
+[![release](https://img.shields.io/github/v/release/AbdelmonemAwad/os-kernelfollow?sort=semver&style=flat-square&color=555555)](https://github.com/AbdelmonemAwad/os-kernelfollow/releases/latest)
+[![checks](https://github.com/AbdelmonemAwad/os-kernelfollow/actions/workflows/checks.yml/badge.svg?branch=main)](https://github.com/AbdelmonemAwad/os-kernelfollow/actions/workflows/checks.yml)
+[![licence: BSD-2-Clause](https://img.shields.io/badge/licence-BSD--2--Clause-blue.svg?style=flat-square)](LICENSE)
+[![OPNsense 26.7](https://img.shields.io/badge/OPNsense-26.7-d94f00.svg?style=flat-square)](#what-is-tested)
+[![part of os-xgs-npu](https://img.shields.io/badge/part%20of-os--xgs--npu-9a6700.svg?style=flat-square)](https://github.com/AbdelmonemAwad/os-xgs-npu)
+
+[![26.7 to 26.7.7: rebuilt before the reboot](https://img.shields.io/badge/26.7%20to%2026.7.7-rebuilt%20before%20the%20reboot-brightgreen.svg?style=flat-square)](#what-is-tested)
+[![26.1.11 to 26.7: staged kernel set followed](https://img.shields.io/badge/26.1.11%20to%2026.7-staged%20kernel%20set%20followed-brightgreen.svg?style=flat-square)](#what-is-tested)
+[![fall-back: kernel.old once, then cleared](https://img.shields.io/badge/fall--back-kernel.old%20once%2C%20then%20cleared-brightgreen.svg?style=flat-square)](#what-is-tested)
 
 Rebuilds an out-of-tree FreeBSD kernel module for the kernel an OPNsense update installs, before the reboot, and holds the reboot until it is built - so a driver outside OPNsense's own repository is there on the next boot.
 
@@ -8,6 +24,9 @@ Rebuilds an out-of-tree FreeBSD kernel module for the kernel an OPNsense update 
 >
 > ~~**Written, not released (2026-10-22).** The code is here; there is no release, and it has not been
 > installed on an appliance yet. What was run is listed under [What is tested](#what-is-tested).~~
+>
+> **1.0.1 (2026-10-30):** quiet logs, sources fetched with room checked and failed fetches held back, a Check that never waits, kernel.old kept while os-xgs-npu's module needs it, and a page that asks once a refresh. Tested in qemu on OPNsense 26.7.7 before the release; see
+> [What is tested](#what-is-tested).
 >
 > **1.0.0, the first release (2026-10-25).** Installed and its page opened on an XGS 3300 (OPNsense
 > 26.7.7) before the release; ~~no real kernel update has been followed yet~~ - since, on 2026-10-29 in
@@ -171,8 +190,8 @@ it was installed with `pkg add` on a plain OPNsense 26.7 on 2026-10-29 - see
 
 ```sh
 sha256sum -c SHA256SUMS
-pkg info -lF os-kernelfollow-1.0.0.pkg      # every file it will write
-pkg add os-kernelfollow-1.0.0.pkg
+pkg info -lF os-kernelfollow-*.pkg       # every file it will write
+pkg add os-kernelfollow-*.pkg
 ```
 
 `pkg delete os-kernelfollow` keeps the settings, the registrations in `/usr/local/etc/kernelfollow.d`
