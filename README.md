@@ -10,8 +10,10 @@ Rebuilds an out-of-tree FreeBSD kernel module for the kernel an OPNsense update 
 > installed on an appliance yet. What was run is listed under [What is tested](#what-is-tested).~~
 >
 > **1.0.0, the first release (2026-10-25).** Installed and its page opened on an XGS 3300 (OPNsense
-> 26.7.7) before the release; no real kernel update has been followed yet. Updated from XGS: Updates
-> when os-xgs-npu is installed, or by its own self-update - see [Updates](#updates).
+> 26.7.7) before the release; ~~no real kernel update has been followed yet~~ - since, on 2026-10-29 in
+> qemu, it has followed two updates and a major upgrade (see [What is tested](#what-is-tested)).
+> Updated from XGS: Updates when os-xgs-npu is installed, or by its own self-update - see
+> [Updates](#updates).
 
 ## What it does
 
@@ -102,12 +104,32 @@ of os-xgs-npu on it. Its WAN reached the internet. A small test module, `kfhello
   setting, whose least is an hour. It removed `/usr/src-26.7-12334a596709` - "the sources of a
   kernel this host no longer runs" - and kept p4's.
 
-Not tested: ~~installing it, the page in a browser~~ (both on 2026-10-25, above), a real kernel
-update (~~fetch over the network, the hooks~~ on 2026-10-29 in qemu, above; a staged set, which a
-major upgrade leaves, not yet), ~~`nextboot` itself, pruning, the package (built by
-`tools/make-package.sh`, added with pkg), and an install on a plain OPNsense, without os-xgs-npu~~
-(all on 2026-10-29 in qemu, above). Which of the stop script and the five-minute cron rebuilt the
-module during the update is not shown: the system log of that boot did not survive the reboot.
+On a third machine in qemu the same day: the nano image of OPNsense 26.1.6, kernel 14.3-RELEASE-p10,
+its `/var/log` moved onto the disk (System: Settings: Miscellaneous) so that the log of every boot
+stayed. Kernel Follower 1.0.0 was installed by hand from its release - the source GitHub serves for
+the tag, with its `install/install.sh`, as [Installation](#installation) says (the package is built
+for 26.7's FreeBSD 15) - and `kfhello` registered and built for the running kernel.
+
+- **An update.** The page's Update took it to 26.1.11 (14.3-RELEASE-p16) and rebooted it. After the
+  reboot the module was stamped for p16, the p10 build kept as `.prev`, and it loaded.
+- **A major upgrade, and a staged set.** System: Firmware's upgrade took it from 26.1.11 to 26.7
+  (`configctl firmware upgrade`: `opnsense-update -u`, then the upgrade hooks, then the pending
+  kernel applied, then a reboot). At this plugin's upgrade hook the 26.7 kernel was still a set
+  waiting in `/var/cache/opnsense-update/.sets.pending`. The log reads `kernel to follow: FreeBSD
+  15.1-RELEASE-p4 stable/26.7-n284159-abbbe67a45e7 SMP (staged, waiting to be applied)`. The module
+  was built against `/usr/src-26.7-abbbe67a45e7`, the sources fetched for that kernel, the 26.1.11
+  build kept as `.prev`, and the new one installed - all before the upgrade installed the kernel
+  itself. After the upgrade's reboots the machine ran OPNsense 26.7.7 on that kernel; the module's
+  stamp matched it, and it loaded. Three later runs, two before the reboot and one after it, found
+  the stamp matching and changed nothing.
+
+Not tested: ~~installing it, the page in a browser~~ (both on 2026-10-25, above), ~~a real kernel
+update (fetch over the network, the hooks~~ on 2026-10-29 in qemu, above; ~~a staged set, which a
+major upgrade leaves, not yet)~~ (on 2026-10-29 in qemu, above), ~~`nextboot` itself, pruning, the
+package (built by `tools/make-package.sh`, added with pkg), and an install on a plain OPNsense,
+without os-xgs-npu~~ (all on 2026-10-29 in qemu, above). Which of the stop script and the
+five-minute cron rebuilt the module during an update, as against a major upgrade, is not shown: the
+system log of that boot did not survive the reboot.
 
 ## Installation
 
@@ -163,8 +185,14 @@ is released, not before.
   `/usr/local/share/os-kernelfollow/update.json`, and the installer's output in `update.log` beside it.
 - `self-update.py check` says what it would do and changes nothing.
 
-Not tested yet: an update taken this way - 1.0.0 is the first release, so none has been ahead of an
-installed copy.
+~~Not tested yet: an update taken this way - 1.0.0 is the first release, so none has been ahead of
+an installed copy.~~ Tested on 2026-10-29 on a plain OPNsense 26.7 in qemu, where the package had
+been added with pkg, which records no commit: `self-update.py check` found the release `v1.0.0`
+(d281f36b4cd9) and nothing installed to compare it with, so to be taken. `self-update.py` fetched
+its source, ran its `install/install.sh` and answered `updated to v1.0.0 (d281f36b4cd9)`, which the
+system log has too. `installed.json` then recorded that commit, from the stamp, and a second check
+found it identical: nothing to take. Not yet: a release ahead of the one installed - 1.0.0 is
+still the only release.
 
 ## Where it fits
 
