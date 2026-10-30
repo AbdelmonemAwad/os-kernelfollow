@@ -22,6 +22,7 @@ Plugin Changelog
 * the page: one status a refresh, the last run's result in the page's language with its reason on hover
 * a registration is read one way by follow.sh and by the page
 * removal also takes what a self-update left
+* the page's menu entry carries an icon in the XGS section, and a Font Awesome 6 one in its own
 
 1.0.0
 

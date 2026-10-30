@@ -13,6 +13,6 @@
         Menu/Menu.xml.
     -->
     <XGS VisibleName="XGS" cssClass="fa fa-microchip fa-fw" order="35">
-        <KernelFollow order="54" VisibleName="Kernel Follower" url="/ui/kernelfollow"/>
+        <KernelFollow order="54" VisibleName="Kernel Follower" cssClass="fa fa-arrows-rotate fa-fw" url="/ui/kernelfollow"/>
     </XGS>
 </menu>
