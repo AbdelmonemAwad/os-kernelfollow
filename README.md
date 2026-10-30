@@ -1,20 +1,23 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/readme/banner-dark.svg">
   <source media="(prefers-color-scheme: light)" srcset="docs/images/readme/banner-light.svg">
-  <img src="docs/images/readme/banner-light.svg" alt="os-kernelfollow - Out-of-tree kernel modules rebuilt for the kernel an update brings" width="100%">
+  <img src="docs/images/readme/banner-light.svg" alt="os-kernelfollow - Out-of-tree modules rebuilt for the kernel an update brings" width="100%">
 </picture>
 
+<p align="center">
+  <a href="https://github.com/AbdelmonemAwad/os-kernelfollow/releases/latest"><img alt="the newest release" src="https://img.shields.io/github/v/release/AbdelmonemAwad/os-kernelfollow?sort=semver&amp;style=flat-square&amp;label=release&amp;color=8250df"></a>
+  <a href="https://github.com/AbdelmonemAwad/os-kernelfollow/actions/workflows/checks.yml"><img alt="checks on main" src="https://img.shields.io/github/actions/workflow/status/AbdelmonemAwad/os-kernelfollow/checks.yml?branch=main&amp;style=flat-square&amp;label=checks"></a>
+  <a href="LICENSE"><img alt="licence: BSD-2-Clause" src="https://img.shields.io/badge/licence-BSD--2--Clause-blue.svg?style=flat-square"></a>
+  <a href="#what-is-tested"><img alt="OPNsense 26.7" src="https://img.shields.io/badge/OPNsense-26.7-d94f00.svg?style=flat-square"></a>
+  <a href="https://github.com/AbdelmonemAwad/opnsense-arabic"><img alt="the page in English and in Arabic" src="https://img.shields.io/badge/GUI-English%20%C2%B7%20Arabic-2da44e.svg?style=flat-square"></a>
+  <a href="https://github.com/AbdelmonemAwad/os-xgs-npu"><img alt="part of os-xgs-npu" src="https://img.shields.io/badge/part%20of-os--xgs--npu-9a6700.svg?style=flat-square"></a>
+  <br>
+  <a href="#what-is-tested"><img alt="26.7 to 26.7.7: rebuilt before the reboot" src="https://img.shields.io/badge/26.7%20to%2026.7.7-rebuilt%20before%20the%20reboot-brightgreen.svg?style=flat-square"></a>
+  <a href="#what-is-tested"><img alt="26.1.11 to 26.7: staged kernel set followed" src="https://img.shields.io/badge/26.1.11%20to%2026.7-staged%20kernel%20set%20followed-brightgreen.svg?style=flat-square"></a>
+  <a href="#what-is-tested"><img alt="fall-back: kernel.old once, then cleared" src="https://img.shields.io/badge/fall--back-kernel.old%20once%2C%20then%20cleared-brightgreen.svg?style=flat-square"></a>
+</p>
+
 # Kernel Follower for OPNsense
-
-[![release](https://img.shields.io/github/v/release/AbdelmonemAwad/os-kernelfollow?sort=semver&style=flat-square&color=555555)](https://github.com/AbdelmonemAwad/os-kernelfollow/releases/latest)
-[![checks](https://github.com/AbdelmonemAwad/os-kernelfollow/actions/workflows/checks.yml/badge.svg?branch=main)](https://github.com/AbdelmonemAwad/os-kernelfollow/actions/workflows/checks.yml)
-[![licence: BSD-2-Clause](https://img.shields.io/badge/licence-BSD--2--Clause-blue.svg?style=flat-square)](LICENSE)
-[![OPNsense 26.7](https://img.shields.io/badge/OPNsense-26.7-d94f00.svg?style=flat-square)](#what-is-tested)
-[![part of os-xgs-npu](https://img.shields.io/badge/part%20of-os--xgs--npu-9a6700.svg?style=flat-square)](https://github.com/AbdelmonemAwad/os-xgs-npu)
-
-[![26.7 to 26.7.7: rebuilt before the reboot](https://img.shields.io/badge/26.7%20to%2026.7.7-rebuilt%20before%20the%20reboot-brightgreen.svg?style=flat-square)](#what-is-tested)
-[![26.1.11 to 26.7: staged kernel set followed](https://img.shields.io/badge/26.1.11%20to%2026.7-staged%20kernel%20set%20followed-brightgreen.svg?style=flat-square)](#what-is-tested)
-[![fall-back: kernel.old once, then cleared](https://img.shields.io/badge/fall--back-kernel.old%20once%2C%20then%20cleared-brightgreen.svg?style=flat-square)](#what-is-tested)
 
 Rebuilds an out-of-tree FreeBSD kernel module for the kernel an OPNsense update installs, before the reboot, and holds the reboot until it is built - so a driver outside OPNsense's own repository is there on the next boot.
 
@@ -25,14 +28,17 @@ Rebuilds an out-of-tree FreeBSD kernel module for the kernel an OPNsense update 
 > ~~**Written, not released (2026-10-22).** The code is here; there is no release, and it has not been
 > installed on an appliance yet. What was run is listed under [What is tested](#what-is-tested).~~
 >
-> **1.0.1 (2026-10-30):** quiet logs, sources fetched with room checked and failed fetches held back, a Check that never waits, kernel.old kept while os-xgs-npu's module needs it, and a page that asks once a refresh. Tested in qemu on OPNsense 26.7.7 before the release; see
-> [What is tested](#what-is-tested).
+> **1.0.1 (2026-10-30):** quiet logs, sources fetched with room checked and failed fetches held back, a Check that never waits, kernel.old kept while os-xgs-npu's module needs it, and a page that asks once a refresh. ~~Tested in qemu on OPNsense 26.7.7 before the release; see~~ Tested in part before the
+> release, in qemu on OPNsense 26.7.7 from the branch that became it; what ran and what did not
+> is under [What is tested](#what-is-tested).
 >
 > **1.0.0, the first release (2026-10-25).** Installed and its page opened on an XGS 3300 (OPNsense
 > 26.7.7) before the release; ~~no real kernel update has been followed yet~~ - since, on 2026-10-29 in
 > qemu, it has followed two updates and a major upgrade (see [What is tested](#what-is-tested)).
 > Updated from XGS: Updates when os-xgs-npu is installed, or by its own self-update - see
 > [Updates](#updates).
+
+<p align="center"><b>Contents:</b> <a href="#what-it-does">What it does</a> &middot; <a href="#beside-os-xgs-npu">Beside os-xgs-npu</a> &middot; <a href="#what-is-tested">What is tested</a> &middot; <a href="#installation">Installation</a> &middot; <a href="#updates">Updates</a> &middot; <a href="#where-it-fits">Where it fits</a> &middot; <a href="#licence">Licence</a></p>
 
 ## What it does
 
@@ -165,6 +171,15 @@ five-minute cron rebuilt the module during an update, as against a major upgrade
 system log of that boot did not survive the reboot.~~ It was the stop script: measured on the 26.1
 machine with `/var/log` on the disk, 2026-10-29 (above).
 
+1.0.1's branch, run on 2026-10-29 in qemu on OPNsense 26.7.7, before its release commit: the
+boot's log lines written once - 5 on the first run, 0 on the second; the room checked before
+anything is fetched - with the room asked for set beyond the disk, `only 11284 MB free in /usr`,
+and nothing fetched or unpacked; and a Check during a run answered at once, in 0 s - `a run is
+under way; check again when it has finished`. Not exercised there: an hour between failed fetches,
+a tree never left half written (the refusal came before any fetch), the upgrade hook's time limit
+(it finished in 1 s), kernel.old kept while os-xgs-npu's module needs it, the page asking once a
+refresh, the one registration rule, and what a removal leaves.
+
 ## Installation
 
 It is not in the OPNsense plugin repository, so there is no `pkg install os-kernelfollow`.
@@ -221,13 +236,15 @@ is released, not before.
 - `self-update.py check` says what it would do and changes nothing.
 
 ~~Not tested yet: an update taken this way - 1.0.0 is the first release, so none has been ahead of
-an installed copy.~~ Tested on 2026-10-29 on a plain OPNsense 26.7 in qemu, where the package had
+an installed copy.~~ Tested on 2026-10-29 on a plain OPNsense ~~26.7~~ 26.7.7 in qemu, where the package had
 been added with pkg, which records no commit: `self-update.py check` found the release `v1.0.0`
 (d281f36b4cd9) and nothing installed to compare it with, so to be taken. `self-update.py` fetched
 its source, ran its `install/install.sh` and answered `updated to v1.0.0 (d281f36b4cd9)`, which the
 system log has too. `installed.json` then recorded that commit, from the stamp, and a second check
-found it identical: nothing to take. Not yet: a release ahead of the one installed - 1.0.0 is
-still the only release.
+found it identical: nothing to take. ~~Not yet: a release ahead of the one installed - 1.0.0 is
+still the only release.~~ Taken on 2026-10-30, on an XGS 3300 with OPNsense 26.7.7: with 1.0.0
+installed, `self-update.py`, run over SSH, answered `updated to v1.0.1 (244ef6257311)`, the system
+log carries the same line, and `installed.json` recorded that commit.
 
 ## Where it fits
 

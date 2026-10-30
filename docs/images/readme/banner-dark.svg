@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="1200" height="300" role="img" aria-label="os-kernelfollow - Out-of-tree kernel modules rebuilt for the kernel an update brings">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="1200" height="300" role="img" aria-label="os-kernelfollow - Out-of-tree modules rebuilt for the kernel an update brings">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#0D1117"/>
@@ -17,6 +17,6 @@
   </g>
   <rect x="80" y="96" width="4" height="108" rx="2" fill="#E3B341"/>
   <text x="108" y="140" font-family="ui-sans-serif,-apple-system,Segoe UI,Inter,Helvetica,Arial,sans-serif" font-size="54" font-weight="700" fill="#E6EDF3" letter-spacing="-1">os-kernelfollow</text>
-  <text x="110" y="182" font-family="ui-sans-serif,-apple-system,Segoe UI,Inter,Helvetica,Arial,sans-serif" font-size="22" font-weight="500" fill="#8B949E">Out-of-tree kernel modules rebuilt for the kernel an update brings</text>
+  <text x="110" y="182" font-family="ui-sans-serif,-apple-system,Segoe UI,Inter,Helvetica,Arial,sans-serif" font-size="22" font-weight="500" fill="#8B949E">Out-of-tree modules rebuilt for the kernel an update brings</text>
   <text x="110" y="216" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="15" fill="#6E7681">staged sets &#183; nextboot fall-back &#183; sources from opnsense/src &#183; OPNsense plugin</text>
 </svg>
