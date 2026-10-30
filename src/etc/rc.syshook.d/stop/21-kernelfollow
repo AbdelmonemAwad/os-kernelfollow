@@ -14,8 +14,16 @@
 : ${FOLLOW:=/usr/local/opnsense/scripts/kernelfollow/follow.sh}
 : ${LIMIT:=600}
 [ -f "${FOLLOW}" ] || exit 0
-if ! /usr/bin/timeout -k 10 "${LIMIT}" /bin/sh "${FOLLOW}" > /dev/null 2>&1; then
+/usr/bin/timeout -k 10 "${LIMIT}" /bin/sh "${FOLLOW}" > /dev/null 2>&1
+rc=$?
+if [ ${rc} -eq 124 ] || [ ${rc} -eq 137 ]; then
+	# Since 2026-10-30 follow.sh arms the fall-back before it starts a rebuild, so a run cut off here
+	# leaves the next boot on kernel.old for a module the network needs, where it matches that kernel.
 	/usr/bin/logger -t kernelfollow -p daemon.err \
-	    "at shutdown: a module was not rebuilt in ${LIMIT}s, or failed; see the entries above"
+	    "at shutdown: a module was not rebuilt in ${LIMIT}s; one the network needs takes kernel.old" \
+	    "at the next boot where it matches it, and the rebuild goes on from there"
+elif [ ${rc} -ne 0 ]; then
+	/usr/bin/logger -t kernelfollow -p daemon.err \
+	    "at shutdown: a module could not be rebuilt; see the entries above"
 fi
 exit 0

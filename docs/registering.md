@@ -18,7 +18,7 @@ CRITICAL=no
 | `SOURCES` | yes | a directory with the module's `Makefile`, `*.c` and `*.h`, exactly as shipped - nothing is ever built in it |
 | `ATTACHED` | no | a sysctl that exists once the driver has attached; old kernel sources are removed only when it does |
 | `OWNER` | no | who registered it, shown on the page |
-| `CRITICAL` | no | `yes` when the network depends on the module: if it cannot be rebuilt, the next boot is sent to `/boot/kernel.old`, which it matches |
+| `CRITICAL` | no | `yes` when the network depends on the module: ~~if it cannot be rebuilt,~~ the next boot is sent to `/boot/kernel.old`, which it matches, before a rebuild for a new kernel starts, and again at every boot until the module matches (since 1.0.2); a rebuild that cannot be done leaves it there |
 
 One `KEY=value` a line; the file is read, never executed. The follower and the page read it the same
 way (since 2026-10-29): spaces around the `=` and at either end of a line are ignored, and so is a
