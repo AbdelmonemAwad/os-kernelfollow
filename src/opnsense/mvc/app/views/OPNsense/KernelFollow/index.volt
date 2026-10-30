@@ -109,13 +109,24 @@
                 data.pool.length ? data.pool.length + ' ' + "{{ lang._('archives') }}" + ', ' +
                     Math.round(bytes / 1048576) + ' MB' : "{{ lang._('no archives carried') }}"));
 
+            const rows = grid_rows(data);
+            if (rows.length) {
+                $('#grid-modules').bootgrid('replace', rows);
+            } else {
+                /* replace() refuses an empty list, as on os-linkhealth's ports */
+                $('#grid-modules').bootgrid('clear');
+            }
+
             $('#kf-project').toggle(!!data.project);
             $('#kf-pinned').toggle(!!data.pinned);
             $('#kf-none').toggle(!data.modules.length && !(data.project_modules || []).length);
 
             $('#kf-trees').text(data.trees.length ? data.trees.join('  ') : '-');
             $('#kf-lastrun').text(data.last_run && data.last_run.length ? data.last_run.join('\n') : '-');
+            /* Neither button while a run is under way: Follow now would wait behind it, and Check
+               would only say that a run is under way (2026-10-29). */
             $('#runAct').prop('disabled', !!data.running_now);
+            $('#checkAct').prop('disabled', !!data.running_now);
             if (data.running_now && !polling) {
                 polling = setInterval(refresh, 5000);
             } else if (!data.running_now && polling) {
@@ -128,21 +139,72 @@
             ajaxGet('/api/kernelfollow/service/status', {}, draw);
         }
 
-        /* What the cards and the tabs show, read again: the state and the modules' grid. */
+        /* What the cards, the grid and the tabs show, read again: one status, one run of status.py
+           (2026-10-29). The grid had a search of its own, which ran status.py a second time - the
+           whole kernel read again, a staged set unpacked again - at every refresh, and every five
+           seconds while a run was going. */
         function refresh() {
             read_state();
-            $('#grid-modules').bootgrid('reload');
         }
 
-        /* Each row as Api/ServiceController::searchAction built it, its strings escaped by the API and
-           put in as they come; os-xgs-npu's own modules quiet, as it follows them itself. */
+        /* The grid's rows, out of the status the cards are drawn from: one for each registration,
+           then one for each of os-xgs-npu's own modules where its follower is installed (project). */
+        function grid_rows(data) {
+            const rows = [];
+            $.each(data.modules || [], function (i, m) {
+                const last = m.last || {};
+                rows.push({
+                    key: 'registration:' + m.name,
+                    name: m.name,
+                    module: m.module || '',
+                    owner: m.owner || '',
+                    stamp: short(m.stamp),
+                    state: !m.installed ? 'missing' : (m.matches ? 'matches' : 'rebuild'),
+                    followed_by: m.followed_by || '',
+                    result: last.result || '',
+                    message: last.message || '',
+                    at: last.at || 0,
+                    project: 0
+                });
+            });
+            $.each(data.project_modules || [], function (i, m) {
+                rows.push({
+                    key: 'project:' + m.module,
+                    name: (m.module || '').replace(/^.*\//, '').replace(/\.ko$/, ''),
+                    module: m.module || '',
+                    owner: 'os-xgs-npu',
+                    stamp: short(m.stamp),
+                    state: m.matches ? 'matches' : 'rebuild',
+                    followed_by: 'os-xgs-npu',
+                    result: '',
+                    message: '',
+                    at: 0,
+                    project: 1
+                });
+            });
+            return rows;
+        }
+
+        /* Each row as grid_rows() made it, its strings escaped by the API and put in as they come;
+           os-xgs-npu's own modules quiet, as it follows them itself. */
         function quiet(row, html) {
             return Number(row.project) ? '<span class="text-muted">' + html + '</span>' : html;
         }
 
+        /* What the last run did with a module, in the page's language: follow.sh records it as one
+           English word, which the column used to show as it came (2026-10-29). */
+        const results = {
+            ok: "{{ lang._('matches') }}",
+            built: "{{ lang._('rebuilt') }}",
+            failed: "{{ lang._('failed') }}",
+            skipped: "{{ lang._('skipped') }}"
+        };
+
         $('#grid-modules').UIBootgrid({
-            search: '/api/kernelfollow/service/search',
+            datakey: 'key',
             options: {
+                /* the rows come with the status, made here: no search of the grid's own */
+                ajax: false,
                 selection: false,
                 formatters: {
                     text: function (column, row) {
@@ -162,7 +224,13 @@
                         return quiet(row, row.followed_by === 'this plugin' ? "{{ lang._('this plugin') }}" : row.followed_by);
                     },
                     last: function (column, row) {
-                        return quiet(row, row.result ? row.result + (Number(row.at) ? ', ' + when(Number(row.at)) : '') : '-');
+                        if (!row.result) {
+                            return quiet(row, '-');
+                        }
+                        const text = (results[row.result] || row.result) +
+                            (Number(row.at) ? ', ' + when(Number(row.at)) : '');
+                        /* and what follow.sh said, on hover: why a module failed or was skipped */
+                        return quiet(row, $('<span/>').attr('title', plain(row.message)).text(plain(text))[0].outerHTML);
                     }
                 }
             }
@@ -198,6 +266,7 @@
             ajaxCall('/api/kernelfollow/service/check', {}, function (data) {
                 $button.prop('disabled', false);
                 $('#kf-check').text(data && data.output ? data.output : '-').show();
+                read_state();
             });
         });
 
@@ -233,7 +302,9 @@
 <ul class="nav nav-tabs" data-tabs="tabs" id="maintabs">
     <li class="active"><a data-toggle="tab" href="#modules">{{ lang._('Modules') }}</a></li>
     <li><a data-toggle="tab" href="#settings">{{ lang._('Settings') }}</a></li>
-    <li><a data-toggle="tab" href="#lastrun">{{ lang._('Last run') }}</a></li>
+    {# The output of the last Follow now, which alone writes last-run.log: the tab was called
+       Last run until 2026-10-29, while the five-minute run and the hooks never wrote to it. #}
+    <li><a data-toggle="tab" href="#lastrun">{{ lang._('Follow now') }}</a></li>
 </ul>
 
 <div class="tab-content content-box">
@@ -242,7 +313,7 @@
             <thead>
                 <tr>
                     <th data-column-id="name" data-formatter="text" data-type="string">{{ lang._('Name') }}</th>
-                    <th data-column-id="module" data-formatter="module" data-type="string" data-identifier="true">{{ lang._('Module') }}</th>
+                    <th data-column-id="module" data-formatter="module" data-type="string">{{ lang._('Module') }}</th>
                     <th data-column-id="owner" data-formatter="text" data-type="string">{{ lang._('Registered by') }}</th>
                     <th data-column-id="stamp" data-formatter="stamp" data-type="string">{{ lang._('Built for') }}</th>
                     <th data-column-id="state" data-formatter="state" data-type="string" data-width="9em">{{ lang._('State') }}</th>

@@ -11,6 +11,6 @@
         model's Menu/Menu.xml.
     -->
     <System>
-        <KernelFollow VisibleName="Kernel Follower" cssClass="fa fa-cogs fa-fw" url="/ui/kernelfollow"/>
+        <KernelFollow VisibleName="Kernel Follower" cssClass="fa fa-arrows-rotate fa-fw" url="/ui/kernelfollow"/>
     </System>
 </menu>

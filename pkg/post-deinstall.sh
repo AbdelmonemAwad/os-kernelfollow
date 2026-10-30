@@ -26,6 +26,15 @@ rm -f /var/lib/php/tmp/opnsense_menu_cache.xml /tmp/opnsense_menu_cache.xml
 
 rm -rf /var/db/os-kernelfollow/build
 
+# What pkg never knew of, so never removes (2026-10-29): /usr/local/share/os-kernelfollow - where the
+# self-update keeps what it installed and its output, a package install that took a self-update having
+# run install/install.sh outside pkg, and the pool of carried archives, which install/uninstall.sh
+# has always removed - and the compiled Python that install.sh's syntax check leaves beside the
+# scripts. Without it the scripts' directory is empty, and goes too. Only this plugin's own paths.
+rm -rf /usr/local/share/os-kernelfollow /usr/local/opnsense/scripts/kernelfollow/__pycache__
+rmdir /usr/local/opnsense/scripts/kernelfollow/i18n/ui /usr/local/opnsense/scripts/kernelfollow/i18n \
+    /usr/local/opnsense/scripts/kernelfollow/menu /usr/local/opnsense/scripts/kernelfollow 2>/dev/null || true
+
 # Kept on purpose: the settings in config.xml; /usr/local/etc/kernelfollow.d and the modules it names,
 # which belong to the plugins that registered them; and the kernel sources in /usr/src-*.
 echo "Kernel Follower removed; the settings and the registrations are kept"

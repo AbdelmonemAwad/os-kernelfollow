@@ -17,6 +17,7 @@ second - out of the binary, without booting it.
 import fcntl
 import glob
 import json
+import lzma
 import os
 import re
 import subprocess
@@ -38,14 +39,28 @@ def version_in(data):
     return found.group(0).decode('ascii', 'replace').strip() if found else None
 
 
+def kernel_in_set(path):
+    """The banner of the kernel in a staged set, out of its boot/kernel/kernel member - named so or
+    './boot/kernel/kernel', as a set can name it. The members are read in order and the rest of the
+    set is never unpacked (2026-10-29): extractfile() by name first listed the whole set, raised
+    KeyError where the first name was not the set's, and so never tried the second."""
+    with tarfile.open(path, 'r:xz') as archive:
+        for member in archive:
+            name = member.name
+            while name.startswith('./'):
+                name = name[2:]
+            if name == 'boot/kernel/kernel' and member.isfile():
+                handle = archive.extractfile(member)
+                return version_in(handle.read()) if handle else None
+    return None
+
+
 def kernel_to_follow():
     if os.path.exists(os.path.join(WORKPREFIX, '.kernel.pending')):
         for path in sorted(glob.glob(os.path.join(WORKPREFIX, '.sets.pending', 'kernel-*.txz'))):
             try:
-                with tarfile.open(path, 'r:xz') as archive:
-                    member = archive.extractfile('./boot/kernel/kernel') or archive.extractfile('boot/kernel/kernel')
-                    found = version_in(member.read()) if member else None
-            except (OSError, KeyError, tarfile.TarError):
+                found = kernel_in_set(path)
+            except (OSError, EOFError, lzma.LZMAError, tarfile.TarError):
                 found = None
             if found:
                 return found, 'staged'
@@ -65,12 +80,19 @@ def read(path):
 
 
 def keys(path):
-    """KEY=value lines, the last of each key winning, as follow.sh reads them."""
+    """KEY=value lines, read as follow.sh's val() reads them (2026-10-29; until then follow.sh took
+    a key only at the start of a line and its value as it stood, and the two could disagree about one
+    file): spaces around either side and carriage returns ignored, one pair of quotes around the
+    value taken off, a line starting with # skipped, the last line for a key winning."""
     out = {}
-    for line in (read(path) or '').splitlines():
-        if '=' in line and not line.lstrip().startswith('#'):
-            key, value = line.split('=', 1)
-            out[key.strip()] = value.strip()
+    for line in (read(path) or '').replace('\r', '').split('\n'):
+        if '=' not in line or line.lstrip().startswith('#'):
+            continue
+        key, value = line.split('=', 1)
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in '"\'':
+            value = value[1:-1]
+        out[key.strip()] = value
     return out
 
 

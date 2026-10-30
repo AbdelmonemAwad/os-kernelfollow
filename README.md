@@ -1,4 +1,20 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/readme/banner-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/readme/banner-light.svg">
+  <img src="docs/images/readme/banner-light.svg" alt="os-kernelfollow - Out-of-tree kernel modules rebuilt for the kernel an update brings" width="100%">
+</picture>
+
 # Kernel Follower for OPNsense
+
+[![release](https://img.shields.io/github/v/release/AbdelmonemAwad/os-kernelfollow?sort=semver&style=flat-square&color=555555)](https://github.com/AbdelmonemAwad/os-kernelfollow/releases/latest)
+[![checks](https://github.com/AbdelmonemAwad/os-kernelfollow/actions/workflows/checks.yml/badge.svg?branch=main)](https://github.com/AbdelmonemAwad/os-kernelfollow/actions/workflows/checks.yml)
+[![licence: BSD-2-Clause](https://img.shields.io/badge/licence-BSD--2--Clause-blue.svg?style=flat-square)](LICENSE)
+[![OPNsense 26.7](https://img.shields.io/badge/OPNsense-26.7-d94f00.svg?style=flat-square)](#what-is-tested)
+[![part of os-xgs-npu](https://img.shields.io/badge/part%20of-os--xgs--npu-9a6700.svg?style=flat-square)](https://github.com/AbdelmonemAwad/os-xgs-npu)
+
+[![26.7 to 26.7.7: rebuilt before the reboot](https://img.shields.io/badge/26.7%20to%2026.7.7-rebuilt%20before%20the%20reboot-brightgreen.svg?style=flat-square)](#what-is-tested)
+[![26.1.11 to 26.7: staged kernel set followed](https://img.shields.io/badge/26.1.11%20to%2026.7-staged%20kernel%20set%20followed-brightgreen.svg?style=flat-square)](#what-is-tested)
+[![fall-back: kernel.old once, then cleared](https://img.shields.io/badge/fall--back-kernel.old%20once%2C%20then%20cleared-brightgreen.svg?style=flat-square)](#what-is-tested)
 
 Rebuilds an out-of-tree FreeBSD kernel module for the kernel an OPNsense update installs, before the reboot, and holds the reboot until it is built - so a driver outside OPNsense's own repository is there on the next boot.
 
@@ -8,6 +24,9 @@ Rebuilds an out-of-tree FreeBSD kernel module for the kernel an OPNsense update 
 >
 > ~~**Written, not released (2026-10-22).** The code is here; there is no release, and it has not been
 > installed on an appliance yet. What was run is listed under [What is tested](#what-is-tested).~~
+>
+> **1.0.1 (2026-10-30):** quiet logs, sources fetched with room checked and failed fetches held back, a Check that never waits, kernel.old kept while os-xgs-npu's module needs it, and a page that asks once a refresh. Tested in qemu on OPNsense 26.7.7 before the release; see
+> [What is tested](#what-is-tested).
 >
 > **1.0.0, the first release (2026-10-25).** Installed and its page opened on an XGS 3300 (OPNsense
 > 26.7.7) before the release; ~~no real kernel update has been followed yet~~ - since, on 2026-10-29 in
@@ -21,21 +40,27 @@ Rebuilds an out-of-tree FreeBSD kernel module for the kernel an OPNsense update 
   yet, or `/boot/kernel` - out of the binary, without booting it, and compares it with the stamp
   beside each module registered with it;
 - **rebuilds a module that does not match**: that kernel's sources, from an archive carried on the
-  machine or from `github.com/opnsense/src` at the commit the kernel names (only `sys/` kept); the
+  machine or from `github.com/opnsense/src` at the commit the kernel names (only `sys/` kept) - since
+  2026-10-29 only with 800 MB free under `/usr`, never leaving a tree half written, and, after a
+  failed fetch, with an hour before the five-minute run fetches the same sources again (the hooks
+  and **Follow now** fetch at once); the
   build from nothing, in a directory emptied first; checked to have compiled every source with the
   machine headers of that kernel; installed under a temporary name and moved into place, stamped,
   the previous build kept beside it as `.prev` with its own stamp;
 - **runs when it matters**: the upgrade hook, the stop hook of every orderly reboot (at most ten
   minutes, so a fetch that will not finish never holds the machine), and cron every five minutes.
-  With nothing registered each of these is a directory listing;
+  With nothing registered each of these is a directory listing; with nothing to do, the log hears
+  so once a boot and again when something changes, not at every tick (since 2026-10-29);
 - **for a module the network needs** (`CRITICAL=yes`), when it cannot be rebuilt, sends the next
   boot to `/boot/kernel.old`, which the installed module matches, with `nextboot -k` - one shot -
   and cancels that itself once the module is rebuilt;
 - **removes the sources of kernels no longer run** once the new kernel has run a day (a setting),
   with every module matching it and attached;
 - **System: Kernel Follower** (XGS: Kernel Follower when os-xgs-npu is installed): the kernel
-  running and the one the next boot takes, each module against it, the sources on disk, the last
-  run, **Check** (what a run would do) and **Follow now**.
+  running and the one the next boot takes, each module against it and what the last run did with
+  it, the sources on disk, ~~the last run~~ the output of the last **Follow now** (in a tab of its
+  own, called Last run until 2026-10-29 although nothing else wrote to it), **Check** (what a run
+  would do) and **Follow now**.
 
 A plugin registers its module with one file in `/usr/local/etc/kernelfollow.d/` -
 [docs/registering.md](docs/registering.md).
@@ -48,7 +73,10 @@ its follower still runs where it is installed, for its own two modules. So while
 this plugin:
 
 - leaves `octep.ko` and `npuep.ko` to it, and only shows them;
-- touches `nextboot` only to cancel a fall-back it set itself, never one os-xgs-npu set;
+- touches `nextboot` only to cancel a fall-back it set itself, ~~never one os-xgs-npu set~~ and not
+  while `octep.ko` or `npuep.ko` is built for another kernel than the one to follow: `nextboot`
+  holds one fall-back for the whole host, and os-xgs-npu sets the same one, so cancelling this
+  plugin's could cancel os-xgs-npu's (since 2026-10-29);
 - leaves the extracted kernel sources in `/usr/src-*` for os-xgs-npu to remove.
 
 When os-xgs-npu hands its modules over is its owner's decision; nothing here changes it.
@@ -122,14 +150,20 @@ for 26.7's FreeBSD 15) - and `kfhello` registered and built for the running kern
   itself. After the upgrade's reboots the machine ran OPNsense 26.7.7 on that kernel; the module's
   stamp matched it, and it loaded. Three later runs, two before the reboot and one after it, found
   the stamp matching and changed nothing.
+- **Which run rebuilds at an ordinary update.** On the same machine, 2026-10-29, with `/var/log` on
+  the disk: an ordinary update (`configctl firmware update`, 26.1.6 to 26.1.11) rebooted the machine
+  by itself, and Kernel Follower ran at 18:47:53 - not a five-minute mark - read the newly installed
+  p16 `/boot/kernel/kernel`, built and installed the module by 18:48:48, and the machine then
+  rebooted: the stop script at the update's reboot rebuilt it.
 
 Not tested: ~~installing it, the page in a browser~~ (both on 2026-10-25, above), ~~a real kernel
 update (fetch over the network, the hooks~~ on 2026-10-29 in qemu, above; ~~a staged set, which a
 major upgrade leaves, not yet)~~ (on 2026-10-29 in qemu, above), ~~`nextboot` itself, pruning, the
 package (built by `tools/make-package.sh`, added with pkg), and an install on a plain OPNsense,
-without os-xgs-npu~~ (all on 2026-10-29 in qemu, above). Which of the stop script and the
+without os-xgs-npu~~ (all on 2026-10-29 in qemu, above). ~~Which of the stop script and the
 five-minute cron rebuilt the module during an update, as against a major upgrade, is not shown: the
-system log of that boot did not survive the reboot.
+system log of that boot did not survive the reboot.~~ It was the stop script: measured on the 26.1
+machine with `/var/log` on the disk, 2026-10-29 (above).
 
 ## Installation
 
@@ -150,13 +184,14 @@ checkout are copied into the pool, so a machine without internet can build.
 sources.
 
 **From a release's package.** A release carries `os-kernelfollow-<version>.pkg` and `SHA256SUMS`,
-built by `tools/make-package.sh` in the release workflow; installing it has not been tested yet.
-Check it and read it before adding it, as root:
+built by `tools/make-package.sh` in the release workflow; ~~installing it has not been tested yet~~
+it was installed with `pkg add` on a plain OPNsense 26.7 on 2026-10-29 - see
+[What is tested](#what-is-tested). Check it and read it before adding it, as root:
 
 ```sh
 sha256sum -c SHA256SUMS
-pkg info -lF os-kernelfollow-1.0.0.pkg      # every file it will write
-pkg add os-kernelfollow-1.0.0.pkg
+pkg info -lF os-kernelfollow-*.pkg       # every file it will write
+pkg add os-kernelfollow-*.pkg
 ```
 
 `pkg delete os-kernelfollow` keeps the settings, the registrations in `/usr/local/etc/kernelfollow.d`

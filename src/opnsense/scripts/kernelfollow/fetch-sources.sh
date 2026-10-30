@@ -87,6 +87,28 @@ if [ -d "${DST}/sys" ]; then
 	exit 0
 fi
 
+# NO TREE HALF WRITTEN IS LEFT BEHIND (2026-10-29). The tree is unpacked into ${DST}.partial and
+# renamed once it is whole; a run ended by a signal - the stop hook gives follow.sh ten minutes, and
+# timeout(1) ends it with SIGTERM - left the .partial where it was, up to 330 MB under /usr that the
+# page never showed and nothing removed once the kernel had moved on.
+PARTIAL=
+cleanup() { [ -z "${PARTIAL}" ] || rm -rf "${PARTIAL}"; }
+trap cleanup EXIT
+trap 'exit 1' INT TERM HUP
+
+# ROOM FIRST (2026-10-29). The tree is about 330 MB of sys/, under /usr, on the file system that holds
+# the rest of OPNsense, and nothing looked before writing it: a full disk would fail the extraction
+# half way, and the next five-minute tick would download the whole tree again. ROOM_MB free is asked
+# of the file system the tree goes to - enough for the tree and as much again for everything else -
+# before anything is unpacked or fetched.
+: ${ROOM_MB:=800}
+ROOM_KB=$(df -Pk "$(dirname "${DST}")" 2>/dev/null | awk 'NR == 2 {print $4}')
+if [ -n "${ROOM_KB}" ] && [ "${ROOM_KB}" -lt $((ROOM_MB * 1024)) ]; then
+	echo "only $((ROOM_KB / 1024)) MB free in $(dirname "${DST}"), and the sources need ${ROOM_MB} MB:" \
+	    "nothing fetched or unpacked." >&2
+	exit 1
+fi
+
 # A COPY ALREADY ON THE APPLIANCE COMES FIRST, because on this appliance the network is downstream
 # of the thing being built. The WAN is one of the coprocessor's front ports, so it exists only while
 # the module matches the running kernel: a fresh install has no internet until the driver is built,
@@ -101,6 +123,7 @@ for a in "${SRCPOOL}"/*"${SHA}"*.tar.gz "${SRCPOOL}"/*"${SHA}"*.tgz \
 	[ -f "${a}" ] || continue
 	echo
 	echo "using the copy already here: ${a}"
+	PARTIAL="${DST}.partial"
 	rm -rf "${DST}.partial"
 	mkdir -p "${DST}.partial"
 	if ! tar -xzf "${a}" -C "${DST}.partial" --strip-components=1 '*/sys/*'; then
@@ -114,6 +137,7 @@ for a in "${SRCPOOL}"/*"${SHA}"*.tar.gz "${SRCPOOL}"/*"${SHA}"*.tgz \
 		break
 	fi
 	mv "${DST}.partial" "${DST}"
+	PARTIAL=
 	echo "unpacked $(du -sh "${DST}" | awk '{print $1}'), nothing fetched"
 	echo
 	echo "SYSDIR=${DST}/sys"
@@ -135,6 +159,7 @@ fi
 # present and already the right version.
 echo
 echo "fetching (the whole tree comes down, only sys/ is written)..."
+PARTIAL="${DST}.partial"
 rm -rf "${DST}.partial"
 mkdir -p "${DST}.partial"
 if ! fetch -o - "${URL}" | tar -xz -C "${DST}.partial" --strip-components=1 '*/sys/*'; then
@@ -149,6 +174,7 @@ if [ ! -f "${DST}.partial/sys/sys/param.h" ]; then
 	exit 1
 fi
 mv "${DST}.partial" "${DST}"
+PARTIAL=
 
 echo
 echo "fetched $(du -sh "${DST}" | awk '{print $1}')"

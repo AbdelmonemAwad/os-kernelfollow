@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="1200" height="300" role="img" aria-label="os-kernelfollow - Out-of-tree kernel modules rebuilt for the kernel an update brings">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#F6F8FA"/>
+    </linearGradient>
+    <pattern id="dots" width="22" height="22" patternUnits="userSpaceOnUse">
+      <circle cx="1.5" cy="1.5" r="1.1" fill="#1F2328" opacity="0.05"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="300" rx="14" fill="url(#bg)"/>
+  <rect width="1200" height="300" rx="14" fill="url(#dots)"/>
+  <g transform="translate(904 46) scale(2)"><rect x="0" y="0" width="56" height="56" rx="16" fill="#F6F8FA" stroke="#D0D7DE"/><path d="M12.0 20.0 h-5 M44.0 20.0 h5" stroke="#59636E" stroke-width="1.6" stroke-linecap="round" fill="none"/><path d="M12.0 28.0 h-5 M44.0 28.0 h5" stroke="#59636E" stroke-width="1.6" stroke-linecap="round" fill="none"/><path d="M12.0 36.0 h-5 M44.0 36.0 h5" stroke="#59636E" stroke-width="1.6" stroke-linecap="round" fill="none"/><path d="M37.6 24.8A10 10 0 1 0 38 31.6" stroke="#9A6700" stroke-width="1.8" stroke-linecap="round" fill="none"/><path d="M38.6 18.6v6.6H32" stroke="#9A6700" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" fill="none"/><rect x="23.5" y="24" width="9" height="9" rx="2" fill="#9A6700"/></g>
+  <g fill="none" stroke="#9A6700" stroke-width="1.5">
+    <path d="M960 196 L1060 226 L960 256 L860 226 Z" opacity="0.55"/>
+    <path d="M960 214 L1060 244 L960 274 L860 244 Z" opacity="0.25"/>
+  </g>
+  <rect x="80" y="96" width="4" height="108" rx="2" fill="#9A6700"/>
+  <text x="108" y="140" font-family="ui-sans-serif,-apple-system,Segoe UI,Inter,Helvetica,Arial,sans-serif" font-size="54" font-weight="700" fill="#1F2328" letter-spacing="-1">os-kernelfollow</text>
+  <text x="110" y="182" font-family="ui-sans-serif,-apple-system,Segoe UI,Inter,Helvetica,Arial,sans-serif" font-size="22" font-weight="500" fill="#59636E">Out-of-tree kernel modules rebuilt for the kernel an update brings</text>
+  <text x="110" y="216" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="15" fill="#6E7781">staged sets &#183; nextboot fall-back &#183; sources from opnsense/src &#183; OPNsense plugin</text>
+</svg>

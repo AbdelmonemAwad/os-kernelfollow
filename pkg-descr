@@ -13,6 +13,17 @@ follower.
 Plugin Changelog
 ================
 
+1.0.1
+
+* routine lines logged once a boot, not every five minutes
+* kernel sources: room checked first, an hour between failed fetches of the same kernel, no tree left half written
+* a Check never waits for a run; the upgrade hook is bounded
+* the fall-back to kernel.old stays while os-xgs-npu's module is built for another kernel
+* the page: one status a refresh, the last run's result in the page's language with its reason on hover
+* a registration is read one way by follow.sh and by the page
+* removal also takes what a self-update left
+* the page's menu entry carries an icon in the XGS section, and a Font Awesome 6 one in its own
+
 1.0.0
 
 * Initial release
