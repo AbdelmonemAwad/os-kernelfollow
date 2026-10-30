@@ -14,7 +14,7 @@
   <br>
   <a href="#what-is-tested"><img alt="26.7 to 26.7.7: rebuilt before the reboot" src="https://img.shields.io/badge/26.7%20to%2026.7.7-rebuilt%20before%20the%20reboot-brightgreen.svg?style=flat-square"></a>
   <a href="#what-is-tested"><img alt="26.1.11 to 26.7: staged kernel set followed" src="https://img.shields.io/badge/26.1.11%20to%2026.7-staged%20kernel%20set%20followed-brightgreen.svg?style=flat-square"></a>
-  <a href="#what-is-tested"><img alt="fall-back: kernel.old once, then cleared" src="https://img.shields.io/badge/fall--back-kernel.old%20once%2C%20then%20cleared-brightgreen.svg?style=flat-square"></a>
+  <a href="#what-is-tested"><img alt="fall-back: kernel.old until rebuilt, then cleared" src="https://img.shields.io/badge/fall--back-kernel.old%20until%20rebuilt%2C%20then%20cleared-brightgreen.svg?style=flat-square"></a>
 </p>
 
 # Kernel Follower for OPNsense
@@ -27,6 +27,12 @@ Rebuilds an out-of-tree FreeBSD kernel module for the kernel an OPNsense update 
 >
 > ~~**Written, not released (2026-10-22).** The code is here; there is no release, and it has not been
 > installed on an appliance yet. What was run is listed under [What is tested](#what-is-tested).~~
+>
+> **1.0.2 (2026-10-30):** the fall-back to kernel.old for a module the network needs is armed
+> before its rebuild starts and held at every boot until the module matches, not only after a
+> failure and for one boot. Tested before the release, from the branch that became it, in qemu on
+> OPNsense 26.7.7 and on an XGS 3300 on OPNsense 26.7.8; what ran and what did not is under
+> [What is tested](#what-is-tested).
 >
 > **1.0.1 (2026-10-30):** quiet logs, sources fetched with room checked and failed fetches held back, a Check that never waits, kernel.old kept while os-xgs-npu's module needs it, and a page that asks once a refresh. ~~Tested in qemu on OPNsense 26.7.7 before the release; see~~ Tested in part before the
 > release, in qemu on OPNsense 26.7.7 from the branch that became it; what ran and what did not
@@ -57,9 +63,13 @@ Rebuilds an out-of-tree FreeBSD kernel module for the kernel an OPNsense update 
   minutes, so a fetch that will not finish never holds the machine), and cron every five minutes.
   With nothing registered each of these is a directory listing; with nothing to do, the log hears
   so once a boot and again when something changes, not at every tick (since 2026-10-29);
-- **for a module the network needs** (`CRITICAL=yes`), when it cannot be rebuilt, sends the next
+- **for a module the network needs** (`CRITICAL=yes`), ~~when it cannot be rebuilt,~~ sends the next
   boot to `/boot/kernel.old`, which the installed module matches, with `nextboot -k` - one shot -
-  and cancels that itself once the module is rebuilt;
+  before a rebuild for a new kernel starts, and again on the first run of every boot until the
+  module matches, so that a reboot in the middle of a long download still comes up with the module
+  it can load (since 1.0.2, 2026-10-30; until then only once a rebuild had failed, and for one
+  boot); and cancels that itself as soon as every module the network needs is rebuilt, whatever
+  the others did;
 - **removes the sources of kernels no longer run** once the new kernel has run a day (a setting),
   with every module matching it and attached;
 - **System: Kernel Follower** (XGS: Kernel Follower when os-xgs-npu is installed): the kernel
@@ -82,7 +92,11 @@ this plugin:
 - touches `nextboot` only to cancel a fall-back it set itself, ~~never one os-xgs-npu set~~ and not
   while `octep.ko` or `npuep.ko` is built for another kernel than the one to follow: `nextboot`
   holds one fall-back for the whole host, and os-xgs-npu sets the same one, so cancelling this
-  plugin's could cancel os-xgs-npu's (since 2026-10-29);
+  plugin's could cancel os-xgs-npu's (since 2026-10-29). The other way round is not covered:
+  os-xgs-npu's follower clears `nextboot` once it has rebuilt its own module, so a fall-back armed
+  here for a module of another plugin, registered with `CRITICAL=yes` and still being rebuilt then,
+  goes with it until the next boot arms it again. No published plugin registers such a module
+  (found in review, 2026-10-30);
 - leaves the extracted kernel sources in `/usr/src-*` for os-xgs-npu to remove.
 
 When os-xgs-npu hands its modules over is its owner's decision; nothing here changes it.
@@ -179,6 +193,54 @@ under way; check again when it has finished`. Not exercised there: an hour betwe
 a tree never left half written (the refusal came before any fetch), the upgrade hook's time limit
 (it finished in 1 s), kernel.old kept while os-xgs-npu's module needs it, the page asking once a
 refresh, the one registration rule, and what a removal leaves.
+
+1.0.2's branch, run on 2026-10-30 before its release commit - the fall-back held until the module
+matches:
+
+- **In qemu**, OPNsense 26.7.7 on UFS, `/var/log` moved onto the disk so that every boot's log
+  stayed. p4 running and in `/boot/kernel`, p1 in `/boot/kernel.old`; `kfhello` registered with
+  `CRITICAL=yes` and built for p1, so the kernel on disk needed a rebuild that kernel.old covers;
+  p4's sources set aside, so the rebuild had a download of about 350 MB to be cut off in; the
+  five-minute cron entry set aside, and the stop hook's limit set to 15 s. A run cut off after 20 s
+  had already armed the fall-back before its download - `nextboot.conf` read
+  `nextboot_enable="YES" kernel="kernel.old"`, logged as notices (`<29>`), and the page showed no
+  warning. The reboot (`rc.reboot`) ran the stop hook, which was cut off at 15 s and said so as an
+  error; the machine came up on kernel.old (p1) with the module loaded. On that boot a run armed it
+  again and was cut off again, and the next reboot came up on kernel.old again. With the source
+  broken, a whole run fetched the sources and failed the build: error lines, the module untouched,
+  and the page's warning on. With the source put back, the next run built and installed the module
+  for p4 in 1 s and cleared the fall-back (`nextboot.conf` gone, both marks gone, no warning); the
+  reboot after it came up on p4, the module loaded, and a run found it matching.
+- **On the first XGS 3300**, OPNsense 26.7.8 on ZFS, os-xgs-npu installed with `octep.ko` matching
+  p6: `kfhello` registered with `CRITICAL=yes` and built for p4, kernel.old. A run whose download
+  was made to take a minute, cut off at 10 s: `/boot/nextboot.conf` read `kernel="kernel.old"`
+  with `nextboot_enable = YES` in the pool's boot environment, notices only; the page's status
+  read no warning and **Check** said it would rebuild and cancel the fall-back. A whole run then
+  built for p6 in 1 s and cleared it. The test module was removed afterwards.
+
+- **After a review of the branch**, which found three faults in the first version of it: armed
+  inside the loop, a module the network needs that sorted after another was armed only after that
+  one's fetch; let go only when the whole run succeeded, a module the network does not need,
+  failing, kept the host one kernel behind; and a run for `ONLY=` one module let go of the fall-back
+  another still needed. Armed now before the loop for every module the network needs, and let go
+  when those modules alone match. Run again in qemu with a second test module, `kfaaa`, which sorts
+  first and is not marked critical, both built for kernel.old: cut off at 20 s, the fall-back for
+  `kfhello` was armed before `kfaaa`'s download, its mark naming the kernel and the boot; the reboot
+  came up on kernel.old. With `kfaaa`'s source broken, a whole run failed it (rc 1) and built
+  `kfhello`, and the fall-back went the moment `kfhello` was installed. With `kfhello` put back to
+  its p1 build, a run for `ONLY=kfaaa` armed the fall-back for `kfhello` and did not let it go; a
+  whole run then built `kfhello` and did. The reboot after came up on p4. A second look at that
+  version found one fault it had brought in: a registration with `CRITICAL=yes` and no `SOURCES`,
+  which the loop passes over as broken, armed the fall-back at every boot and kept it for good.
+  Such a registration is now passed over there too: in qemu, `kfbad` - an installed module stamped
+  for kernel.old, registered with no `SOURCES` - armed nothing, and with it still there `kfhello`
+  was armed, built and let go. On the XGS 3300 the cut-off run and the whole run were repeated with
+  this last version: armed, then cleared.
+
+Not run for 1.0.2: a reboot on the XGS 3300 (that appliance came up on kernel.old and back the same
+day for os-xgs-npu's identical `nextboot` calls), a kernel set still staged (where the fall-back is
+not armed ahead), and a fall-back held for os-xgs-npu's module. The page itself was not opened on
+the XGS 3300 (it asked for a login); what it reads was.
 
 ## Installation
 
