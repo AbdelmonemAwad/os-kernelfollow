@@ -229,8 +229,13 @@ matches:
   came up on kernel.old. With `kfaaa`'s source broken, a whole run failed it (rc 1) and built
   `kfhello`, and the fall-back went the moment `kfhello` was installed. With `kfhello` put back to
   its p1 build, a run for `ONLY=kfaaa` armed the fall-back for `kfhello` and did not let it go; a
-  whole run then built `kfhello` and did. The reboot after came up on p4. On the XGS 3300 the
-  cut-off run and the whole run were repeated with this version: armed, then cleared.
+  whole run then built `kfhello` and did. The reboot after came up on p4. A second look at that
+  version found one fault it had brought in: a registration with `CRITICAL=yes` and no `SOURCES`,
+  which the loop passes over as broken, armed the fall-back at every boot and kept it for good.
+  Such a registration is now passed over there too: in qemu, `kfbad` - an installed module stamped
+  for kernel.old, registered with no `SOURCES` - armed nothing, and with it still there `kfhello`
+  was armed, built and let go. On the XGS 3300 the cut-off run and the whole run were repeated with
+  this last version: armed, then cleared.
 
 Not run for 1.0.2: a reboot on the XGS 3300 (that appliance came up on kernel.old and back the same
 day for os-xgs-npu's identical `nextboot` calls), a kernel set still staged (where the fall-back is

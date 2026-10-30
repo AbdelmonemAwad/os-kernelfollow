@@ -334,11 +334,15 @@ unpin_old_kernel() {
 # fall-back is let go on this alone (2026-10-30, found in review): it waited for the whole run to
 # succeed, so a module the network does not need, failing, held the host one kernel behind, and a run
 # for ONLY one module let go of the fall-back another still needed.
+#
+# A registration with no SOURCES is passed over, here and where the fall-back is armed, as the loop
+# passes it over: it can never be rebuilt, so a fall-back armed for it would never be let go, and the
+# host would take kernel.old at every boot with nothing on the page to say why (found in review).
 critical_match() {
 	for cc in "${CONFD}"/*.conf; do
 		[ -f "${cc}" ] && [ "$(val CRITICAL "${cc}")" = yes ] || continue
 		cm=$(val MODULE "${cc}")
-		[ -n "${cm}" ] && [ -f "${cm}" ] || continue
+		[ -n "${cm}" ] && [ -f "${cm}" ] && [ -n "$(val SOURCES "${cc}")" ] || continue
 		case "${cm##*/}" in
 		octep.ko|npuep.ko) [ -f "${PROJECT}" ] && continue ;;
 		esac
@@ -481,7 +485,7 @@ if [ "${DRY}" != 1 ] && [ "${WHERE}" = "${KERNEL}" ] &&
 	for conf in "${CONFD}"/*.conf; do
 		[ -f "${conf}" ] && [ "$(val CRITICAL "${conf}")" = yes ] || continue
 		module=$(val MODULE "${conf}")
-		[ -n "${module}" ] && [ -f "${module}" ] || continue
+		[ -n "${module}" ] && [ -f "${module}" ] && [ -n "$(val SOURCES "${conf}")" ] || continue
 		case "${module##*/}" in
 		octep.ko|npuep.ko) [ -f "${PROJECT}" ] && continue ;;
 		esac
