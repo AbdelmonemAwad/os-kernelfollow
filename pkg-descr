@@ -16,6 +16,7 @@ Plugin Changelog
 1.0.2
 
 * the fall-back to kernel.old for a module the network needs: armed before its rebuild starts and held at every boot until the module matches, not only after a failure and for one boot
+* the fall-back let go as soon as every module the network needs matches, whatever the others did, and never by a run for ONLY another module
 * the stop hook tells a run cut off by its time limit from one that failed
 
 1.0.1

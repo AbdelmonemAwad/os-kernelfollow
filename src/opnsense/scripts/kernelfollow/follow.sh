@@ -84,8 +84,8 @@ fi
 : ${KERNEL:=/boot/kernel/kernel}
 : ${KERNEL_OLD:=/boot/kernel.old/kernel}
 : ${NEXTBOOT:=/sbin/nextboot}
-# The fall-back armed ahead of a rebuild, with the kernel it was armed for (emptied at boot with the
-# rest of /var/run)
+# The fall-back armed ahead of a rebuild, with the kernel it was armed for and the boot it was armed
+# in (/var/run is emptied at boot as well; the boot is kept so that this does not depend on it)
 : ${ARMED:=/var/run/kernelfollow.armed}
 : ${WORKPREFIX:=/var/cache/opnsense-update}
 : ${PENDINGDIR:=${WORKPREFIX}/.sets.pending}
@@ -261,15 +261,16 @@ record() {
 # failed, and spent by the boot it steered. os-xgs-npu's follower, which this one came from, did the
 # same, and on an XGS 107w (os-xgs-npu issue 890) a reboot while the sources were still downloading
 # took the new kernel with the old module: no ports, and no network to repair it from. So it is also
-# armed BEFORE a rebuild starts - `pin_old_kernel <stamp> ahead` - and again by the first run of
-# every boot until the module matches; unpin_old_kernel() lets go then. Armed ahead, its lines are
-# notices, not errors - an ordinary kernel update is not a failure - and its mark is ${ARMED}, so the
-# page's warning, which reads ${STATE}/pinned, still means that something failed. Either mark is this
-# plugin's own, so this never clears a fall-back somebody else set.
+# armed BEFORE the rebuilds start - `pin_old_kernel <stamp> ahead`, before the loop over the modules -
+# and again by the first run of every boot until every module the network needs matches;
+# unpin_old_kernel() lets go then. Armed ahead, its lines are notices, not errors - an ordinary kernel
+# update is not a failure - and its mark is ${ARMED}, so the page's warning, which reads
+# ${STATE}/pinned, still means that something failed. Either mark is this plugin's own, so this never
+# clears a fall-back somebody else set.
 pin_old_kernel() {
-	say=warn mark="${STATE}/pinned"
+	say=warn mark="${STATE}/pinned" what="${TARGET}"
 	if [ "${2:-}" = ahead ]; then
-		say=log mark="${ARMED}"
+		say=log mark="${ARMED}" what="${TARGET}|${BOOTED}"
 	fi
 	OLDV=$(version_of_kernel_file "${KERNEL_OLD}" || true)
 	if [ -z "${OLDV}" ] || [ "${OLDV}" != "$1" ]; then
@@ -285,7 +286,7 @@ pin_old_kernel() {
 		return 0
 	fi
 	if "${NEXTBOOT}" -k kernel.old > /dev/null 2>&1; then
-		echo "${TARGET}" > "${mark}"
+		echo "${what}" > "${mark}"
 		${say} "  the next boot will take /boot/kernel.old, which this module matches"
 		[ "${say}" = log ] && log "  until the module is rebuilt for the kernel to follow, which cancels it"
 		return 0
@@ -300,6 +301,12 @@ pin_old_kernel() {
 # so an octep.ko it could not rebuild, and sent to kernel.old, would meet the new kernel, and an XGS
 # come up with no front ports. While either module is installed and stamped for a kernel other than
 # the one to follow, only this plugin's own mark goes, and the fall-back stays.
+#
+# The other way round is not covered (found in review, 2026-10-30): os-xgs-npu's follower clears
+# nextboot when it has rebuilt its own module, whoever armed it. Where a module registered here with
+# CRITICAL=yes is still being rebuilt at that moment, its fall-back goes with it, and the mark here
+# still says armed, so it is armed again only at the next boot. No published plugin registers such a
+# module beside os-xgs-npu.
 : ${PROJECT_MODULES:=/boot/modules/octep.ko /boot/modules/npuep.ko}
 unpin_old_kernel() {
 	[ -f "${STATE}/pinned" ] || [ -f "${ARMED}" ] || return 0
@@ -320,6 +327,24 @@ unpin_old_kernel() {
 	"${NEXTBOOT}" -D > /dev/null 2>&1 || true
 	/bin/rm -f "${STATE}/pinned" "${ARMED}"
 	log "the fall-back to kernel.old this plugin set is cleared; the next boot takes /boot/kernel"
+}
+
+# Whether every installed module the network needs matches the kernel to follow - read from the
+# stamps as they are now, whatever this run built, failed, or was told to leave alone with ONLY=. The
+# fall-back is let go on this alone (2026-10-30, found in review): it waited for the whole run to
+# succeed, so a module the network does not need, failing, held the host one kernel behind, and a run
+# for ONLY one module let go of the fall-back another still needed.
+critical_match() {
+	for cc in "${CONFD}"/*.conf; do
+		[ -f "${cc}" ] && [ "$(val CRITICAL "${cc}")" = yes ] || continue
+		cm=$(val MODULE "${cc}")
+		[ -n "${cm}" ] && [ -f "${cm}" ] || continue
+		case "${cm##*/}" in
+		octep.ko|npuep.ko) [ -f "${PROJECT}" ] && continue ;;
+		esac
+		[ "$(/bin/cat "${cm}.kernel" 2>/dev/null)" = "${TARGET}" ] || return 1
+	done
+	return 0
 }
 
 # ---------------------------------------------------------------- the sources, once a run
@@ -442,12 +467,34 @@ install_module() {
 	log "  installed ${module}, stamped for the kernel the next boot will use"
 }
 
+# ---------------------------------------------------------------- the fall-back, ahead of the rebuilds
+
+# Before the loop, because the sources are fetched once a run, for whichever module needs them first
+# (2026-10-30, found in review: armed inside the loop, a module the network needs that sorted after
+# one it does not was armed only after that one's fetch). Every module the network needs counts, ONLY=
+# or not: one that does not match the kernel on disk wants the fall-back whatever this run was asked
+# to build. Installed modules only - a first build has no kernel to fall back to - and only once the
+# kernel to follow is in /boot: while it is a set still staged, kernel.old is the kernel before the
+# one running. Once a boot, for the kernel to follow; never on a DRY run.
+if [ "${DRY}" != 1 ] && [ "${WHERE}" = "${KERNEL}" ] &&
+    [ "$(/bin/cat "${ARMED}" 2>/dev/null)" != "${TARGET}|${BOOTED}" ]; then
+	for conf in "${CONFD}"/*.conf; do
+		[ -f "${conf}" ] && [ "$(val CRITICAL "${conf}")" = yes ] || continue
+		module=$(val MODULE "${conf}")
+		[ -n "${module}" ] && [ -f "${module}" ] || continue
+		case "${module##*/}" in
+		octep.ko|npuep.ko) [ -f "${PROJECT}" ] && continue ;;
+		esac
+		stamp=$(/bin/cat "${module}.kernel" 2>/dev/null || true)
+		[ "${stamp}" = "${TARGET}" ] && continue
+		log "$(/usr/bin/basename "${conf}" .conf): the network needs it, and it is built for another kernel"
+		pin_old_kernel "${stamp}" ahead && break
+	done
+fi
+
 FAILED=0
 ALLMATCH=1
 DETACHED=0
-# whether this boot has armed the fall-back ahead for this kernel already (see pin_old_kernel)
-AHEAD=0
-[ "$(/bin/cat "${ARMED}" 2>/dev/null)" = "${TARGET}" ] && AHEAD=1
 for conf in "${CONFD}"/*.conf; do
 	[ -f "${conf}" ] || continue
 	name=$(/usr/bin/basename "${conf}" .conf)
@@ -491,16 +538,13 @@ for conf in "${CONFD}"/*.conf; do
 		log "  DRY=1 - would rebuild it for the kernel to follow"
 		continue
 	fi
-	# The fall-back first, before a fetch that can take long - for an installed module built for
-	# another kernel, not a first build or a FORCE=1 one for the same kernel; and only once the kernel
-	# to follow is in /boot: while it is a set still staged, kernel.old is the kernel before the one
-	# running.
-	if [ "${critical}" = yes ] && [ "${AHEAD}" = 0 ] && [ "${WHERE}" = "${KERNEL}" ] &&
-	    [ -f "${module}" ] && [ "${stamp}" != "${TARGET}" ]; then
-		pin_old_kernel "${stamp}" ahead && AHEAD=1
-	fi
 	if sources && build "${name}" "${module}" "${src}" && install_module "${name}" "${module}" "${stamp}"; then
 		record "${name}" built "rebuilt for the kernel to follow"
+		# The fall-back goes as soon as the last module the network needs matches, not after the
+		# rest of the run: a time limit reached in a later module's build would otherwise keep it.
+		if [ "${critical}" = yes ] && [ "${WHERE}" = "${KERNEL}" ] && critical_match; then
+			unpin_old_kernel
+		fi
 		continue
 	fi
 	FAILED=1
@@ -511,10 +555,16 @@ for conf in "${CONFD}"/*.conf; do
 	record "${name}" failed "could not be rebuilt for the kernel to follow; see ${STATE}/${name}.build.log"
 done
 
-if [ "${FAILED}" = 0 ]; then
-	# Everything matches the kernel on disk now, so a fall-back this plugin set is no longer needed -
-	# only once the kernel to follow is /boot/kernel itself, not a set still waiting.
-	[ "${WHERE}" = "${KERNEL}" ] && unpin_old_kernel
+# Every module the network needs matches the kernel on disk now, so a fall-back this plugin set is no
+# longer needed - only once the kernel to follow is /boot/kernel itself, not a set still waiting.
+# Decided by those modules alone (critical_match) since 2026-10-30; a DRY run, which builds nothing,
+# still says what a run that succeeds would do.
+if [ "${WHERE}" = "${KERNEL}" ]; then
+	if [ "${DRY}" = 1 ]; then
+		[ "${FAILED}" = 0 ] && unpin_old_kernel
+	elif critical_match; then
+		unpin_old_kernel
+	fi
 fi
 
 # ---------------------------------------------------------------- the sources of kernels gone by
