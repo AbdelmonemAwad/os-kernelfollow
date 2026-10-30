@@ -28,8 +28,9 @@ Rebuilds an out-of-tree FreeBSD kernel module for the kernel an OPNsense update 
 > ~~**Written, not released (2026-10-22).** The code is here; there is no release, and it has not been
 > installed on an appliance yet. What was run is listed under [What is tested](#what-is-tested).~~
 >
-> **1.0.1 (2026-10-30):** quiet logs, sources fetched with room checked and failed fetches held back, a Check that never waits, kernel.old kept while os-xgs-npu's module needs it, and a page that asks once a refresh. Tested in qemu on OPNsense 26.7.7 before the release; see
-> [What is tested](#what-is-tested).
+> **1.0.1 (2026-10-30):** quiet logs, sources fetched with room checked and failed fetches held back, a Check that never waits, kernel.old kept while os-xgs-npu's module needs it, and a page that asks once a refresh. ~~Tested in qemu on OPNsense 26.7.7 before the release; see~~ Tested in part before the
+> release, in qemu on OPNsense 26.7.7 from the branch that became it; what ran and what did not
+> is under [What is tested](#what-is-tested).
 >
 > **1.0.0, the first release (2026-10-25).** Installed and its page opened on an XGS 3300 (OPNsense
 > 26.7.7) before the release; ~~no real kernel update has been followed yet~~ - since, on 2026-10-29 in
@@ -170,6 +171,15 @@ five-minute cron rebuilt the module during an update, as against a major upgrade
 system log of that boot did not survive the reboot.~~ It was the stop script: measured on the 26.1
 machine with `/var/log` on the disk, 2026-10-29 (above).
 
+1.0.1's branch, run on 2026-10-29 in qemu on OPNsense 26.7.7, before its release commit: the
+boot's log lines written once - 5 on the first run, 0 on the second; the room checked before
+anything is fetched - with the room asked for set beyond the disk, `only 11284 MB free in /usr`,
+and nothing fetched or unpacked; and a Check during a run answered at once, in 0 s - `a run is
+under way; check again when it has finished`. Not exercised there: an hour between failed fetches,
+a tree never left half written (the refusal came before any fetch), the upgrade hook's time limit
+(it finished in 1 s), kernel.old kept while os-xgs-npu's module needs it, the page asking once a
+refresh, the one registration rule, and what a removal leaves.
+
 ## Installation
 
 It is not in the OPNsense plugin repository, so there is no `pkg install os-kernelfollow`.
@@ -226,7 +236,7 @@ is released, not before.
 - `self-update.py check` says what it would do and changes nothing.
 
 ~~Not tested yet: an update taken this way - 1.0.0 is the first release, so none has been ahead of
-an installed copy.~~ Tested on 2026-10-29 on a plain OPNsense 26.7 in qemu, where the package had
+an installed copy.~~ Tested on 2026-10-29 on a plain OPNsense ~~26.7~~ 26.7.7 in qemu, where the package had
 been added with pkg, which records no commit: `self-update.py check` found the release `v1.0.0`
 (d281f36b4cd9) and nothing installed to compare it with, so to be taken. `self-update.py` fetched
 its source, ran its `install/install.sh` and answered `updated to v1.0.0 (d281f36b4cd9)`, which the
