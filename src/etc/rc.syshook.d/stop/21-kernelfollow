@@ -16,14 +16,15 @@
 [ -f "${FOLLOW}" ] || exit 0
 
 # THE FALL-BACK FIRST, ON ITS OWN. Where a module the network needs is not built for the kernel in
-# /boot and is built for kernel.old, follow.sh's own pin_old_kernel() sends the next boot to
-# kernel.old: PINONLY=1, which waits for no lock and fetches nothing, so it is done whatever becomes of
-# the run below. Until 2026-11-06 that run was all there was, and it arms the fall-back only once it
-# holds follow.sh's lock. Where another run held it - a five-minute run started while a major
-# upgrade's kernel was still a staged set, which arms nothing, still fetching over a slow line - this
-# one waited for it until the time limit cut it off, and the line below said that the next boot took
-# kernel.old with nothing armed. That boot took the new kernel with a module built for the old one.
-# A minute is far more than the few reads and the one nextboot this takes.
+# /boot and is built for kernel.old, of the same FreeBSD major release, follow.sh's own
+# pin_old_kernel() sends the next boot to kernel.old, and where none needs it unpin_old_kernel() lets
+# go of the one this plugin set: PINONLY=1, which waits for no lock and fetches nothing, so it is done
+# whatever becomes of the run below. Until 2026-11-06 that run was all there was, and it arms the
+# fall-back only once it holds follow.sh's lock. Where another run held it - a five-minute run
+# started while a major upgrade's kernel was still a staged set, which arms nothing, still fetching
+# over a slow line - this one waited for it until the time limit cut it off, and the line below said
+# that the next boot took kernel.old with nothing armed. That boot took the new kernel with a module
+# built for the old one. A minute is far more than the few reads and the one nextboot this takes.
 pin() { PINONLY=1 /usr/bin/timeout -k 5 60 /bin/sh "${FOLLOW}" > /dev/null 2>&1; }
 pin
 
@@ -35,13 +36,17 @@ rc=$?
 # the run lets the fall-back go as soon as every module the network needs matches, and can still be
 # cut off on another module's build after that; and os-xgs-npu's follower clears nextboot once it has
 # rebuilt its own module, whoever armed it (ONE FALL-BACK FOR THE WHOLE HOST, in follow.sh), which its
-# five-minute run can do while this one waits - so a fall-back still needed is armed again here. Only
-# the answer is said, and kernel.old only where it is armed. Until 2026-11-06 a run cut off here was
-# said to leave one the network needs on kernel.old, armed or not.
+# five-minute run can do while this one waits - so a fall-back still needed is armed again here, and
+# since 2026-11-06 the one this plugin set is let go where none needs it any more. Only the answer
+# is said, and kernel.old only where it is armed. Until 2026-11-06 a run cut off here was said to
+# leave one the network needs on kernel.old, armed or not. The answer that none needs it is 3 since
+# the same day, a status sh never exits with: it was 2, which sh exits with on an error of its own -
+# a variable not set, a syntax error - and such an error was read here as every module the network
+# needs built for /boot/kernel.
 pin
 case $? in
 0) FOUND="the next boot takes kernel.old, which a module the network needs is built for" ;;
-2) FOUND="every module the network needs that this plugin follows is built for /boot/kernel" ;;
+3) FOUND="every module the network needs that this plugin follows is built for /boot/kernel" ;;
 *) FOUND="this plugin did not send the next boot to kernel.old" ;;
 esac
 if [ ${rc} -eq 124 ] || [ ${rc} -eq 137 ]; then

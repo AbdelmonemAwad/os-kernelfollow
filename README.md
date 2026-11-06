@@ -71,7 +71,11 @@ Rebuilds an out-of-tree FreeBSD kernel module for the kernel an OPNsense update 
   module matches, so that a reboot in the middle of a long download still comes up with the module
   it can load (since 1.0.2, 2026-10-30; until then only once a rebuild had failed, and for one
   boot); and cancels that itself as soon as every module the network needs is rebuilt, whatever
-  the others did;
+  the others did - since 2026-11-06 also when the run began while the new kernel was still a
+  staged set. Never across a FreeBSD major release (since 2026-11-06): after a major upgrade - 26.1
+  to 26.7 is FreeBSD 14.3 to 15.1 - `kernel.old` is the old release's kernel, and FreeBSD does not
+  support a userland newer than its kernel, so there the next boot takes `/boot/kernel`, without
+  the module if it could not be rebuilt for it;
 - **removes the sources of kernels no longer run** once the new kernel has run a day (a setting),
   with every module matching it and attached;
 - **System: Kernel Follower** (XGS: Kernel Follower when os-xgs-npu is installed): the kernel
