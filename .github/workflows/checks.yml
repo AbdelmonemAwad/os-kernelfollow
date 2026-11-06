@@ -124,7 +124,10 @@ jobs:
       # while another run holds the lock, the fall-back to kernel.old armed first without
       # it (PINONLY=1), armed again where it was cleared during the wait, and said only
       # where it is armed; and a rebuild that fails with the new kernel still staged, left
-      # to that reboot (2026-11-06). tools/test-follow.py.
+      # to that reboot (2026-11-06). Since the same day also: the fall-back let go by a run
+      # that began on a staged set once it has rebuilt the module the network needs, and by
+      # PINONLY=1 where none needs it; an error of the shell not read as none needing it;
+      # and kernel.old of another FreeBSD major release never armed. tools/test-follow.py.
       - name: The fall-back to kernel.old at a reboot
         run: python3 tools/test-follow.py
 

@@ -15,8 +15,9 @@
 #	TICK=1 ...                    the five-minute cron run: after a failed fetch, an hour before the
 #	                              same sources are fetched again
 #	PINONLY=1 sh follow.sh        only send the next boot to kernel.old, for a module the network
-#	                              needs that is built for it and not for /boot/kernel; no lock, no
-#	                              fetch, no build - the stop hook runs this first
+#	                              needs that is built for it and not for /boot/kernel - or, where
+#	                              none needs it, cancel the one this plugin set; no lock, no fetch,
+#	                              no build - the stop hook runs this first
 #
 # WHY. A FreeBSD module declares its kernel dependency as a range - from the __FreeBSD_version it was
 # compiled with to the end of the branch - so within 15.x `kldload` loads a module built against a
@@ -140,11 +141,11 @@ val() {
 }
 
 # Nothing registered is the usual state of a machine this plugin was only installed on: no kernel is
-# read, nothing is logged, and cron's tick costs one directory listing. PINONLY=1 answers 2 then,
+# read, nothing is logged, and cron's tick costs one directory listing. PINONLY=1 answers 3 then,
 # nothing needs the fall-back: its 0 would say that it armed it ("the fall-back alone", below).
 set -- "${CONFD}"/*.conf
 if [ ! -f "$1" ]; then
-	[ "${PINONLY}" = 1 ] && exit 2
+	[ "${PINONLY}" = 1 ] && exit 3
 	exit 0
 fi
 
@@ -188,6 +189,15 @@ fi
 version_of_kernel_file() {
 	[ -r "$1" ] || return 1
 	/usr/bin/strings -a "$1" 2>/dev/null | /usr/bin/grep -m1 -E '^FreeBSD [0-9].*stable/[^ ]+' || return 1
+}
+
+# The release a kernel's version names, and its major number: 15.1-RELEASE-p6 and 15 in
+# "FreeBSD 15.1-RELEASE-p6 stable/26.7-n284176-c962f76493b6 SMP".
+release_of() {
+	printf '%s\n' "$1" | /usr/bin/sed -n 's/^FreeBSD \([^ ]*\).*/\1/p'
+}
+major_of() {
+	printf '%s\n' "$1" | /usr/bin/sed -n 's/^FreeBSD \([0-9][0-9]*\).*/\1/p'
 }
 
 kernel_staged() {
@@ -288,6 +298,9 @@ pin_old_kernel() {
 	if [ "${2:-}" = ahead ]; then
 		say=log mark="${ARMED}" what="${TARGET}|${BOOTED}"
 	fi
+	# the kernel in /boot now: the one to follow, or with a set still staged the one it replaces
+	BOOTV=${TARGET}
+	[ "${WHERE}" = "${KERNEL}" ] || BOOTV=$(version_of_kernel_file "${KERNEL}" || true)
 	# A KERNEL STILL STAGED is applied before the reboot that follows, and from then on the
 	# kernel in /boot now is kernel.old: that is the one a boot can fall back to, and the stop
 	# hook arms it at that reboot (PINONLY=1, below). Nothing is armed here, where kernel.old is
@@ -295,9 +308,10 @@ pin_old_kernel() {
 	# staged one - and a rebuild that failed at the upgrade hook said that falling back would not
 	# help and that the next boot would load a module built for another kernel, where the stop
 	# hook sends that boot to kernel.old, which the module is built for. A module built for
-	# neither is judged as before, as os-xgs-npu's follower judges it since the same day.
-	if [ "${WHERE}" != "${KERNEL}" ] && [ -n "$1" ] &&
-	    [ "$(version_of_kernel_file "${KERNEL}" || true)" = "$1" ]; then
+	# neither is judged as before, as os-xgs-npu's follower judges it since the same day. Nor is
+	# the stop hook said to send it there across a major release, which it does not (below).
+	if [ "${WHERE}" != "${KERNEL}" ] && [ -n "$1" ] && [ "${BOOTV}" = "$1" ]; then
+		across_major "once the staged kernel is applied, /boot/kernel.old" "$1" "${TARGET}" && return 1
 		if [ ! -x "${NEXTBOOT}" ]; then
 			${say} "  no ${NEXTBOOT}, so the next boot cannot be steered"
 			return 1
@@ -311,6 +325,7 @@ pin_old_kernel() {
 		${say} "  the module does not match /boot/kernel.old either; falling back would not help"
 		return 1
 	fi
+	across_major /boot/kernel.old "${OLDV}" "${BOOTV}" "${TARGET}" && return 1
 	if [ ! -x "${NEXTBOOT}" ]; then
 		${say} "  no ${NEXTBOOT}, so the next boot cannot be steered"
 		return 1
@@ -326,6 +341,34 @@ pin_old_kernel() {
 		return 0
 	fi
 	warn "  ${NEXTBOOT} -k kernel.old failed"
+	return 1
+}
+
+# NOT ACROSS A MAJOR RELEASE (2026-11-06). A major upgrade of OPNsense is one of FreeBSD as well -
+# 26.1 to 26.7 is 14.3 to 15.1 - and after it /boot/kernel.old is the old release's kernel, while
+# /boot/kernel and the userland the upgrade installs are the new one's. FreeBSD supports an older
+# userland on a newer kernel, not a newer userland on an older one, so a boot sent to kernel.old
+# then trades the module the network needs for a system it does not support. Until 2026-11-06
+# nothing here compared the two: 1.0.2 armed it wherever a run reached the fall-back with the module
+# still built for the old release, and the stop hook's first look, new that day, would have armed it
+# at every orderly reboot of the upgrade. So pin_old_kernel() arms it only where the kernel it would
+# boot is of the same major release as the one in /boot and, with a set still staged, as the kernel
+# to follow, and otherwise says why not and answers as where falling back would not help.
+# os-xgs-npu's follower sets the same fall-back for its own two modules by its own judgement, and
+# this one leaves that to it (ONE FALL-BACK FOR THE WHOLE HOST, below).
+#
+# across_major <the name of the kernel a fall-back would boot> <its version> <version>...: true, and
+# said, where one of the versions after it is of another major release; one that cannot be read is
+# passed over.
+across_major() {
+	aw=$1 av=$2
+	shift 2
+	for v in "$@"; do
+		[ -z "${v}" ] || [ "$(major_of "${v}")" = "$(major_of "${av}")" ] && continue
+		${say} "  ${aw} is FreeBSD $(release_of "${av}"), of another major release than FreeBSD" \
+		    "$(release_of "${v}"); the next boot is not sent to it"
+		return 0
+	done
 	return 1
 }
 
@@ -364,6 +407,16 @@ unpin_old_kernel() {
 	log "the fall-back to kernel.old this plugin set is cleared; the next boot takes /boot/kernel"
 }
 
+# Whether the kernel to follow is the one in /boot: read from there, or from a staged set that the
+# update has applied since this run read it. Until 2026-11-06 only the first counted, and a run that
+# began while a major upgrade's kernel was still a staged set - a five-minute run's - and rebuilt the
+# module the network needs after the set was applied never let the fall-back go, which the stop hook
+# arms at the reboot, without the lock, while that run goes on: the next boot would take kernel.old
+# with the module rebuilt for /boot/kernel.
+in_boot() {
+	[ "${WHERE}" = "${KERNEL}" ] || [ "$(version_of_kernel_file "${KERNEL}" || true)" = "${TARGET}" ]
+}
+
 # Whether every installed module the network needs matches the kernel to follow - read from the
 # stamps as they are now, whatever this run built, failed, or was told to leave alone with ONLY=. The
 # fall-back is let go on this alone (2026-10-30, found in review): it waited for the whole run to
@@ -389,10 +442,10 @@ critical_match() {
 # The fall-back for the modules the network needs, chosen as critical_match() chooses them: armed
 # once, by the first of them that is built for another kernel than ${TARGET} and that kernel.old
 # matches. The loop that armed it ahead of the rebuilds until 2026-11-06 (below), shared since with
-# PINONLY=1, whose answer its status is: 0 armed, 2 none of them needs it, 1 one does and it could
+# PINONLY=1, whose answer its status is: 0 armed, 3 none of them needs it, 1 one does and it could
 # not be armed.
 fall_back() {
-	fb=2
+	fb=3
 	for conf in "${CONFD}"/*.conf; do
 		[ -f "${conf}" ] && [ "$(val CRITICAL "${conf}")" = yes ] || continue
 		module=$(val MODULE "${conf}")
@@ -411,8 +464,9 @@ fall_back() {
 
 # ---------------------------------------------------------------- the fall-back alone, at a reboot
 
-# PINONLY=1 arms the fall-back and does nothing else: no lock, no sources, no build, no record for the
-# page. The stop hook runs it at every orderly reboot, before a whole run, and says what it answers.
+# PINONLY=1 arms the fall-back, or lets go of the one this plugin set where nothing needs it, and does
+# nothing else: no lock, no sources, no build, no record for the page. The stop hook runs it at every
+# orderly reboot, before a whole run and after one cut off, and says what it answers.
 #
 # Until 2026-11-06 only the run holding the lock could arm it, and only one that found the kernel to
 # follow already in /boot ("the fall-back, ahead of the rebuilds", below). A major upgrade over a slow
@@ -423,11 +477,18 @@ fall_back() {
 # old one.
 #
 # No lock, because nothing here needs one: it writes no module, and what it changes - nextboot and
-# ${ARMED} - pin_old_kernel() changes only for a module built for kernel.old. If the run holding the
-# lock installs a rebuilt module and lets the fall-back go just as this arms it, the next boot takes
-# kernel.old with the module rebuilt for /boot/kernel, and the one it replaced kept beside it as
-# .prev, with its stamp, for whatever loads the module to take instead (docs/registering.md): one
-# kernel behind, as the fall-back always is.
+# ${ARMED} - pin_old_kernel() changes only for a module built for kernel.old, and unpin_old_kernel()
+# only where every module the network needs is built for /boot/kernel, the finding on which a run
+# holding the lock lets it go too. If that run installs a rebuilt module and lets the fall-back go
+# just as this arms it, the next boot takes kernel.old with the module rebuilt for /boot/kernel, and
+# the one it replaced kept beside it as .prev, with its stamp, for whatever loads the module to take
+# instead (docs/registering.md): one kernel behind, as the fall-back always is.
+#
+# Where modules are registered and none of them needs it, a fall-back this plugin set goes
+# (2026-11-06), as unpin_old_kernel() lets it go - never os-xgs-npu's. Until then it stayed where the
+# module had been rebuilt by a run that did not let it go, or just as this armed it, and the stop
+# hook could say that every module the network needs was built for /boot/kernel of a next boot that
+# took kernel.old.
 #
 # /boot/kernel and not a staged set, because the question is what the loader boots: with a kernel
 # still staged, /boot/kernel is the one running and kernel.old the one before it. And armed whatever
@@ -435,10 +496,12 @@ fall_back() {
 # nextboot once it has rebuilt its own module, whoever armed it (ONE FALL-BACK FOR THE WHOLE HOST).
 #
 # The answer is the exit status, so that the stop hook says only what is so: 0 the next boot is sent
-# to kernel.old; 2 nothing needs it - every module the network needs that this plugin follows is
+# to kernel.old; 3 nothing needs it - every module the network needs that this plugin follows is
 # built for /boot/kernel, or none is registered; 1 one is not, and the next boot could not be sent to
 # kernel.old, for the reason in the lines before - or /boot/kernel cannot be read, or the plugin is
-# switched off in its settings.
+# switched off in its settings. 3 and not 2 since 2026-11-06: sh exits with 2 on an error of its
+# own - a variable that is not set, under set -u, or a syntax error - and the stop hook read such an
+# error as every module the network needs built for /boot/kernel.
 if [ "${PINONLY}" = 1 ]; then
 	TARGET=$(version_of_kernel_file "${KERNEL}" || true)
 	WHERE="${KERNEL}"
@@ -447,7 +510,9 @@ if [ "${PINONLY}" = 1 ]; then
 		exit 1
 	fi
 	fall_back
-	exit $?
+	fb=$?
+	[ "${fb}" = 3 ] && unpin_old_kernel
+	exit "${fb}"
 fi
 
 # ---------------------------------------------------------------- the sources, once a run
@@ -637,7 +702,8 @@ for conf in "${CONFD}"/*.conf; do
 		record "${name}" built "rebuilt for the kernel to follow"
 		# The fall-back goes as soon as the last module the network needs matches, not after the
 		# rest of the run: a time limit reached in a later module's build would otherwise keep it.
-		if [ "${critical}" = yes ] && [ "${WHERE}" = "${KERNEL}" ] && critical_match; then
+		# Once the kernel it was built for is the one in /boot (in_boot, 2026-11-06).
+		if [ "${critical}" = yes ] && in_boot && critical_match; then
 			unpin_old_kernel
 		fi
 		continue
@@ -651,10 +717,11 @@ for conf in "${CONFD}"/*.conf; do
 done
 
 # Every module the network needs matches the kernel on disk now, so a fall-back this plugin set is no
-# longer needed - only once the kernel to follow is /boot/kernel itself, not a set still waiting.
+# longer needed - only once the kernel to follow is /boot/kernel itself, not a set still waiting:
+# read from /boot, or since 2026-11-06 a staged set the update has applied during the run (in_boot).
 # Decided by those modules alone (critical_match) since 2026-10-30; a DRY run, which builds nothing,
 # still says what a run that succeeds would do.
-if [ "${WHERE}" = "${KERNEL}" ]; then
+if in_boot; then
 	if [ "${DRY}" = 1 ]; then
 		[ "${FAILED}" = 0 ] && unpin_old_kernel
 	elif critical_match; then

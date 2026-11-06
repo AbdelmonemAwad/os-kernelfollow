@@ -14,10 +14,16 @@ after a kernel update - the fall-back armed while another run holds the lock, ar
 cleared during the wait, and kernel.old said only where it is armed (2026-11-06; until then the stop
 hook said it whether anything had armed it or not).
 
+And since the same day: the fall-back let go by a run that began while the kernel was a staged set,
+once it has rebuilt the module the network needs for that kernel, applied since, and by PINONLY=1
+where none needs it; an error of the shell in PINONLY=1 not read as "none needs it"; and kernel.old of
+another FreeBSD major release never armed.
+
     python3 tools/test-follow.py
 """
 import fcntl
 import os
+import shutil
 import signal
 import subprocess
 import tarfile
@@ -34,6 +40,9 @@ STOP = os.path.join(HERE, '..', 'src', 'etc', 'rc.syshook.d', 'stop', '21-kernel
 NEXT = 'FreeBSD 15.1-RELEASE-p6 stable/26.7-n284176-c962f76493b6 SMP'
 OLD = 'FreeBSD 15.1-RELEASE-p4 stable/26.7-n284159-abbbe67a45e7 SMP'
 OLDER = 'FreeBSD 15.1-RELEASE-p2 stable/26.7-n284102-0f1e2d3c4b5a SMP'
+# The kernels of the release before, as a major upgrade - 26.1 to 26.7 - leaves them in /boot
+OLD14 = 'FreeBSD 14.3-RELEASE-p16 stable/26.1-n273411-4b9e2d1c7a03 SMP'
+OLDER14 = 'FreeBSD 14.3-RELEASE-p10 stable/26.1-n273287-9d8c7b6a5e4f SMP'
 BOOTED = '1762400000'
 
 # Everything follow.sh and the hook take from the environment: none of it is inherited from the one
@@ -113,12 +122,14 @@ class Follower(unittest.TestCase):
         os.chmod(self.path('bin/' + name), 0o755)
         return self.path('bin/' + name)
 
-    def fetch(self, works):
-        """fetch-sources.sh: the sources of the kernel it is given, or none"""
+    def fetch(self, works, seconds=0):
+        """fetch-sources.sh: the sources of the kernel it is given, or none; where they are, after the
+        seconds a download over a slow line takes"""
         tree = self.path('usr/src-26.7-c962f76493b6')
         if works:
             self.write(tree + '/sys/sys/param.h', '/* made up */\n')
-            self.stub('fetch-sources.sh', self.record('fetch.calls') + 'echo "SYSDIR=%s/sys"' % tree)
+            self.stub('fetch-sources.sh', self.record('fetch.calls') +
+                      ('sleep %d\n' % seconds if seconds else '') + 'echo "SYSDIR=%s/sys"' % tree)
         else:
             self.stub('fetch-sources.sh', self.record('fetch.calls') +
                       'echo "no sources for $1 here, and nothing to fetch them from"; exit 1')
@@ -144,6 +155,22 @@ class Follower(unittest.TestCase):
         fcntl.flock(fd, fcntl.LOCK_EX)
         self.addCleanup(os.close, fd)
 
+    def stage(self, version):
+        """the kernel an update has fetched and not applied yet, as opnsense-update leaves it"""
+        self.kernel('staged-kernel', version)
+        os.makedirs(self.path('update/.sets.pending'))
+        with tarfile.open(self.path('update/.sets.pending/kernel-26.7-amd64.txz'), 'w:xz') as t:
+            t.add(self.path('staged-kernel'), arcname='boot/kernel/kernel')
+        self.write('update/.kernel.pending', '26.7\n')
+        self.staged = version
+
+    def apply(self):
+        """the update applies the staged kernel: the one in /boot/kernel becomes kernel.old"""
+        os.replace(self.path('boot/kernel/kernel'), self.path('boot/kernel.old/kernel'))
+        self.kernel('boot/kernel/kernel', self.staged)
+        os.remove(self.path('update/.kernel.pending'))
+        shutil.rmtree(self.path('update/.sets.pending'))
+
     # ---------------------------------------------------------------- the scripts
 
     def copy(self, source, name):
@@ -157,6 +184,13 @@ class Follower(unittest.TestCase):
             self.write(name, text)
             self.copies[name] = self.path(name)
         return self.copies[name]
+
+    def break_follow(self, at, into):
+        """follow.sh's copy with what is at one place in it changed, as an edit could leave it"""
+        with open(self.copy(FOLLOW, 'follow.sh'), encoding='utf-8') as f:
+            text = f.read()
+        self.assertEqual(text.count(at), 1, at)
+        self.write('follow.sh', text.replace(at, into))
 
     def env(self, **more):
         env = {k: v for k, v in os.environ.items() if k not in THEIRS}
@@ -197,6 +231,31 @@ class Follower(unittest.TestCase):
         env = self.env(FOLLOW=self.copy(FOLLOW, 'follow.sh'), LIMIT=str(limit))
         return self.run_in_session(['/bin/sh', hook], env, limit + 60, meanwhile)
 
+    def five_minute_run(self):
+        """cron's run, left running in the background; returned once it is fetching sources"""
+        p = subprocess.Popen(['/bin/sh', self.copy(FOLLOW, 'follow.sh')], env=self.env(TICK='1'),
+                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                             start_new_session=True)
+
+        def end():
+            if p.returncode is None:
+                try:
+                    os.killpg(p.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                p.communicate()
+        self.addCleanup(end)
+        until = time.monotonic() + 10
+        while not self.lines('fetch.calls') and time.monotonic() < until:
+            time.sleep(0.05)
+        self.assertTrue(self.lines('fetch.calls'), 'the five-minute run never fetched')
+        return p
+
+    def finish(self, p, seconds=30):
+        """(exit status, what it printed) of a run left in the background, once it has ended"""
+        out, _ = p.communicate(timeout=seconds)
+        return p.returncode, out
+
     def armed(self):
         """whether the next boot is sent to kernel.old"""
         return self.read('nextboot.conf') == 'kernel="kernel.old"\n'
@@ -204,8 +263,9 @@ class Follower(unittest.TestCase):
 
 class PinOnly(Follower):
     """PINONLY=1, as the stop hook runs it first: the next boot sent to kernel.old for a module the
-    network needs that is built for kernel.old and not for /boot/kernel - and no lock, no fetch, no
-    build, nothing recorded for the page."""
+    network needs that is built for kernel.old and not for /boot/kernel, or the fall-back this plugin
+    set let go where none needs it - and no lock, no fetch, no build, nothing recorded for the
+    page."""
 
     def pin_only(self, seconds=20):
         return self.follow(PINONLY='1', seconds=seconds)
@@ -233,7 +293,7 @@ class PinOnly(Follower):
     def test_a_module_built_for_the_next_kernel_needs_nothing_and_says_nothing(self):
         self.register('net', NEXT)
         rc, out, _ = self.pin_only()
-        self.assertEqual(rc, 2, out)
+        self.assertEqual(rc, 3, out)
         self.assertEqual(self.lines('nextboot.calls'), [])
         self.assertFalse(os.path.exists(self.path('run/kernelfollow.armed')))
         self.assertEqual(self.read('log'), '')
@@ -282,13 +342,70 @@ class PinOnly(Follower):
         self.write('octep/kernel-follow.sh', '# os-xgs-npu is installed: octep.ko is left to it\n')
         self.register('octep', OLD)
         rc, out, _ = self.pin_only()
-        self.assertEqual(rc, 2, out)
+        self.assertEqual(rc, 3, out)
         self.assertEqual(self.lines('nextboot.calls'), [])
         self.assertDidNothingElse()
 
     def test_nothing_registered_needs_nothing(self):
         rc, out, _ = self.pin_only()
-        self.assertEqual(rc, 2, out)
+        self.assertEqual(rc, 3, out)
+        self.assertDidNothingElse()
+
+    def test_where_none_needs_it_the_fall_back_this_plugin_set_goes(self):
+        # the module rebuilt for /boot/kernel by a run that did not let the fall-back go, or just as
+        # the stop hook's first look armed it
+        self.register('net', NEXT)
+        self.write('nextboot.conf', 'kernel="kernel.old"\n')
+        self.write('run/kernelfollow.armed', '%s|%s\n' % (NEXT, BOOTED))
+        self.write('state/pinned', NEXT + '\n')
+        rc, out, _ = self.pin_only()
+        self.assertEqual(self.lines('nextboot.calls'), ['-D'])
+        self.assertEqual(rc, 3, out)
+        self.assertFalse(self.armed())
+        self.assertFalse(os.path.exists(self.path('run/kernelfollow.armed')))
+        self.assertFalse(os.path.exists(self.path('state/pinned')))
+        self.assertIn('the fall-back to kernel.old this plugin set is cleared', self.read('log'))
+        self.assertDidNothingElse()
+
+    def test_where_none_needs_it_a_fall_back_somebody_else_set_stays(self):
+        # no mark of this plugin's: whoever armed nextboot, it was not this plugin
+        self.register('net', NEXT)
+        self.write('nextboot.conf', 'kernel="kernel.old"\n')
+        rc, out, _ = self.pin_only()
+        self.assertEqual(rc, 3, out)
+        self.assertEqual(self.lines('nextboot.calls'), [])
+        self.assertTrue(self.armed())
+        self.assertDidNothingElse()
+
+    def test_where_none_needs_it_the_fall_back_stays_for_os_xgs_npu_s_module(self):
+        # ONE FALL-BACK FOR THE WHOLE HOST: os-xgs-npu's octep.ko is built for another kernel, and its
+        # follower arms the same nextboot for it
+        self.register('net', NEXT)
+        self.write('octep/kernel-follow.sh', '# os-xgs-npu is installed\n')
+        self.write('boot/modules/octep.ko', 'ELF octep\n')
+        self.write('boot/modules/octep.ko.kernel', OLD + '\n')
+        self.write('nextboot.conf', 'kernel="kernel.old"\n')
+        self.write('run/kernelfollow.armed', '%s|%s\n' % (NEXT, BOOTED))
+        rc, out, _ = self.pin_only()
+        self.assertFalse(os.path.exists(self.path('run/kernelfollow.armed')))
+        self.assertEqual(rc, 3, out)
+        self.assertEqual(self.lines('nextboot.calls'), [])
+        self.assertTrue(self.armed())
+        self.assertIn('this plugin needs the fall-back to kernel.old no longer; it stays for octep.ko',
+                      self.read('log'))
+        self.assertDidNothingElse()
+
+    def test_kernel_old_of_another_major_release_is_not_armed(self):
+        # after a major upgrade: /boot/kernel is FreeBSD 15, kernel.old and the module 14
+        self.kernel('boot/kernel.old/kernel', OLD14)
+        self.register('net', OLD14)
+        rc, out, _ = self.pin_only()
+        self.assertEqual(rc, 1, out)
+        self.assertEqual(self.lines('nextboot.calls'), [])
+        self.assertFalse(self.armed())
+        self.assertFalse(os.path.exists(self.path('run/kernelfollow.armed')))
+        self.assertIn('/boot/kernel.old is FreeBSD 14.3-RELEASE-p16, of another major release than FreeBSD '
+                      '15.1-RELEASE-p6; the next boot is not sent to it', self.read('log'))
         self.assertDidNothingElse()
 
     def test_switched_off_arms_nothing_and_does_not_say_it_needed_nothing(self):
@@ -304,14 +421,6 @@ class PinOnly(Follower):
 
 class WholeRun(Follower):
     """A whole run, the lock free."""
-
-    def stage(self, version):
-        """the kernel an update has fetched and not applied yet, as opnsense-update leaves it"""
-        self.kernel('staged-kernel', version)
-        os.makedirs(self.path('update/.sets.pending'))
-        with tarfile.open(self.path('update/.sets.pending/kernel-26.7-amd64.txz'), 'w:xz') as t:
-            t.add(self.path('staged-kernel'), arcname='boot/kernel/kernel')
-        self.write('update/.kernel.pending', '26.7\n')
 
     def test_it_still_arms_the_fall_back_ahead_of_its_rebuild(self):
         self.register('net', OLD)
@@ -340,6 +449,37 @@ class WholeRun(Follower):
         self.assertEqual(self.lines('nextboot.calls'), [], 'armed while kernel.old is still the one before')
         self.assertNotIn('falling back would not help', log)
         self.assertNotIn('will load a module built for another kernel', log)
+
+    def test_a_failed_rebuild_for_a_staged_major_release_is_not_left_to_kernel_old(self):
+        # at the upgrade hook of a major upgrade: FreeBSD 14 in /boot, 15 staged
+        self.kernel('boot/kernel/kernel', OLD14)
+        self.kernel('boot/kernel.old/kernel', OLDER14)
+        self.stage(NEXT)
+        self.register('net', OLD14)
+        rc, out, _ = self.follow()
+        log = self.read('log')
+        self.assertEqual(rc, 1, out)
+        self.assertIn('once the staged kernel is applied, /boot/kernel.old is FreeBSD 14.3-RELEASE-p16, of '
+                      'another major release than FreeBSD 15.1-RELEASE-p6; the next boot is not sent to it',
+                      log)
+        self.assertIn('the next boot will load a module built for another kernel, or none', log)
+        self.assertNotIn('the stop hook sends the next boot to it', log)
+        self.assertEqual(self.lines('nextboot.calls'), [])
+
+    def test_after_a_major_upgrade_kernel_old_is_armed_neither_ahead_nor_after_a_failure(self):
+        # the upgrade applied: FreeBSD 15 in /boot/kernel, 14 in kernel.old, the module built for it
+        self.kernel('boot/kernel.old/kernel', OLD14)
+        self.register('net', OLD14)
+        rc, out, _ = self.follow()
+        log = self.read('log')
+        self.assertEqual(self.lines('nextboot.calls'), [])
+        self.assertEqual(rc, 1, out)
+        self.assertIn('net: the network needs it, and it is built for another kernel', log)
+        self.assertEqual(log.count('/boot/kernel.old is FreeBSD 14.3-RELEASE-p16, of another major release '
+                                   'than FreeBSD 15.1-RELEASE-p6; the next boot is not sent to it'), 2, log)
+        self.assertIn('the next boot will load a module built for another kernel, or none', log)
+        self.assertFalse(os.path.exists(self.path('run/kernelfollow.armed')))
+        self.assertFalse(os.path.exists(self.path('state/pinned')))
 
 
 class AtShutdown(Follower):
@@ -428,6 +568,69 @@ class AtShutdown(Follower):
         self.assertIn('-p daemon.err at shutdown: a module could not be rebuilt (see the entries above); the '
                       'next boot takes kernel.old, which a module the network needs is built for',
                       self.hook_line())
+
+    def test_a_module_rebuilt_after_the_hook_by_a_run_begun_on_a_staged_set_lets_the_fall_back_go(self):
+        # A five-minute run takes the lock while a major upgrade's kernel is still a staged set and
+        # fetches its sources over a slow line; the update applies the set, and the reboot's stop hook
+        # arms the fall-back and gives up on the lock while that run still fetches. The run rebuilds the
+        # module for the kernel now in /boot after that, before the host goes down.
+        self.kernel('boot/kernel/kernel', OLD)
+        self.kernel('boot/kernel.old/kernel', OLDER)
+        self.stage(NEXT)
+        self.register('net', OLD)
+        self.fetch(works=True, seconds=5)
+        run = self.five_minute_run()
+        self.apply()
+        rc, out, _ = self.stop(limit=2)
+        self.assertEqual(rc, 0, out)
+        self.assertIn('cut off after 2s; the next boot takes kernel.old, which a module the network needs '
+                      'is built for', self.hook_line())
+        rc, out = self.finish(run)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.read('boot/modules/net.ko.kernel'), NEXT + '\n')
+        self.assertFalse(self.armed(), 'kernel.old next, with the module rebuilt for /boot/kernel')
+        self.assertFalse(os.path.exists(self.path('run/kernelfollow.armed')))
+        self.assertIn('the fall-back to kernel.old this plugin set is cleared', self.read('log'))
+
+    def test_a_run_begun_on_a_staged_set_lets_the_fall_back_go_with_the_module_the_network_needs(self):
+        # The same run rebuilds the module the network needs while the hook waits for the lock, and is
+        # still building one it does not need when the hook's time limit comes.
+        self.kernel('boot/kernel/kernel', OLD)
+        self.kernel('boot/kernel.old/kernel', OLDER)
+        self.stage(NEXT)
+        self.register('a-net', OLD)
+        self.register('b-extra', OLD, critical=False, slow=6)
+        self.fetch(works=True, seconds=2)
+        run = self.five_minute_run()
+        self.apply()
+        rc, out, _ = self.stop(limit=5)
+        line = self.hook_line()
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.lines('nextboot.calls')[:1], ['-k kernel.old'], 'the first look armed nothing')
+        self.assertIn('cut off after 5s; every module the network needs that this plugin follows is built '
+                      'for /boot/kernel', line)
+        self.assertFalse(self.armed(), 'said built for /boot/kernel, and the next boot takes kernel.old')
+        rc, out = self.finish(run)
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.read('boot/modules/a-net.ko.kernel'), NEXT + '\n')
+        self.assertFalse(self.armed())
+        self.assertFalse(os.path.exists(self.path('run/kernelfollow.armed')))
+
+    def test_an_error_of_the_shell_in_its_look_is_not_read_as_none_needing_the_fall_back(self):
+        # sh exits with 2 on an error of its own - here a variable not set, under set -u, as an edit
+        # that missed one would leave it - and 2 was the answer that none needs the fall-back
+        self.register('net', OLD)
+        self.break_follow('fall_back() {\n', 'fall_back() {\n\t: "${NOT_SET_ANYWHERE}"\n')
+        rc, out, _ = self.follow(PINONLY='1')
+        self.assertEqual(rc, 2, out)
+        self.assertIn('NOT_SET_ANYWHERE', out)
+        self.hold_lock()
+        rc, out, _ = self.stop(limit=2)
+        line = self.hook_line()
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.lines('nextboot.calls'), [])
+        self.assertIn('cut off after 2s; this plugin did not send the next boot to kernel.old', line)
+        self.assertNotIn('every module the network needs', line)
 
 
 if __name__ == '__main__':
