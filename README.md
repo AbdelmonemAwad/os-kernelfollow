@@ -249,6 +249,42 @@ day for os-xgs-npu's identical `nextboot` calls), a kernel set still staged (whe
 not armed ahead), and a fall-back held for os-xgs-npu's module. The page itself was not opened on
 the XGS 3300 (it asked for a login); what it reads was.
 
+1.0.3, before its release, on the first XGS 3300 (vendor version 23) and the XGS 136 (vendor
+version 21), 2026-11-06, OPNsense 26.7 with os-xgs-npu installed; the release branch installed by
+`install/install.sh` from its archive with a commit stamp, as the self-update installs a release.
+The stop hook of 1.0.2 and of 1.0.3 run as the shutdown runs it (`FOLLOW` pointing at each one's
+follow.sh), with a registration of a module the network needs - an empty file stamped for
+kernel.old (15.1-RELEASE-p4) and not for `/boot/kernel` (p6) - in a directory of its own (`CONFD`,
+`STATE`, `ARMED`), `NOFETCH=1`, `LIMIT=10`, and `nextboot` itself, cleared after every run:
+
+- **Another run holding the lock** (`lockf` on follow.sh's lock): 1.0.2 waited for it to its limit,
+  armed nothing, and said that one the network needs takes kernel.old at the next boot - five runs
+  on the XGS 3300, three on the XGS 136. 1.0.3 armed kernel.old first, without the lock, and said so
+  after the cut-off, in 12 to 13 s: two runs of the release branch on the XGS 3300 and one on the
+  XGS 136, and six of the first version of it, before the review below.
+- **No lock**: both armed it; 1.0.3's line after the failed rebuild says so too (3 s, against 1 to
+  2 s).
+- **kernel.old of another major release** - a file standing in for a 14.3 kernel through
+  `KERNEL_OLD`, the module stamped for it: 1.0.2, and 1.0.3's first version, sent the next boot to
+  it; 1.0.3 does not - `/boot/kernel.old is FreeBSD 14.3-RELEASE-p16, of another major release than
+  FreeBSD 15.1-RELEASE-p6; the next boot is not sent to it` - and the hook says it did not, on both
+  appliances.
+- **Review of the first version**, which found three faults besides that one: a run that began on
+  a staged kernel never let the fall-back go after installing the rebuilt module; "nothing needs it"
+  was status 2, which sh also exits with on an error of its own; the changelog left changes out.
+  Fixed in #12, with `tools/test-follow.py` at 26 cases (12 of them fail on 1.0.2's scripts).
+- **Ordinary restarts** by `rc.reboot`, nothing registered, 1.0.2 and 1.0.3 in turn: the stop hooks
+  up to 80-freebsd took 2 s with either; the front ports back after a median 146 s on the XGS 3300
+  with both (3 runs each) and after 122 and 124 s on the XGS 136 (6 each, permutation p = 0.20).
+- **Soak.** With 1.0.3 and os-watchdog 1.0.2 installed, 20 restarts of the XGS 3300 and 22 of the XGS 136
+  by `rc.reboot` in an hour: every one an ordinary reboot (bit 19, the boot's own record), all
+  front ports back (12 and 14; medians 148 and 124 s), and no line of either plugin in the system
+  log - nothing is registered there, so the stop hook's first look and its run answer at once.
+
+Not run for 1.0.3: a real major upgrade from 26.1 (the major-release rule was run with a stand-in
+kernel file), a reboot into kernel.old (each fall-back was read in `/boot/nextboot.conf` and cleared
+before any restart), and the rebuilt module landing after the first look (by the tests only).
+
 ## Installation
 
 It is not in the OPNsense plugin repository, so there is no `pkg install os-kernelfollow`.

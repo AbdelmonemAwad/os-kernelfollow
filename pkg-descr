@@ -13,6 +13,17 @@ follower.
 Plugin Changelog
 ================
 
+1.0.3
+
+* fall-back to kernel.old armed first at every orderly reboot, without
+  waiting for another run's lock, and armed again after a run that
+  failed or was cut off; the stop hook says only what is so
+* fall-back let go once the rebuilt module matches, also after a run
+  that began on a staged kernel
+* never a fall-back to a kernel.old of another FreeBSD major release
+* a failed rebuild with the kernel still staged says the stop hook sends
+  the next boot to kernel.old at the reboot that follows
+
 1.0.2
 
 * the fall-back to kernel.old for a module the network needs: armed before its rebuild starts and held at every boot until the module matches, not only after a failure and for one boot
