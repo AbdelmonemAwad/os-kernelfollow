@@ -10,20 +10,45 @@
 # Numbered below 80-freebsd, which takes the network with it.
 #
 # Bounded: a fetch that will not finish must not hold the machine. And never the reason a reboot does
-# not happen. With nothing registered, or nothing changed, it is a directory listing and two reads.
+# not happen. With nothing registered, or nothing changed, it is a few reads.
 : ${FOLLOW:=/usr/local/opnsense/scripts/kernelfollow/follow.sh}
 : ${LIMIT:=600}
 [ -f "${FOLLOW}" ] || exit 0
+
+# THE FALL-BACK FIRST, ON ITS OWN. Where a module the network needs is not built for the kernel in
+# /boot and is built for kernel.old, follow.sh's own pin_old_kernel() sends the next boot to
+# kernel.old: PINONLY=1, which waits for no lock and fetches nothing, so it is done whatever becomes of
+# the run below. Until 2026-11-06 that run was all there was, and it arms the fall-back only once it
+# holds follow.sh's lock. Where another run held it - a five-minute run started while a major
+# upgrade's kernel was still a staged set, which arms nothing, still fetching over a slow line - this
+# one waited for it until the time limit cut it off, and the line below said that the next boot took
+# kernel.old with nothing armed. That boot took the new kernel with a module built for the old one.
+# A minute is far more than the few reads and the one nextboot this takes.
+pin() { PINONLY=1 /usr/bin/timeout -k 5 60 /bin/sh "${FOLLOW}" > /dev/null 2>&1; }
+pin
+
 /usr/bin/timeout -k 10 "${LIMIT}" /bin/sh "${FOLLOW}" > /dev/null 2>&1
 rc=$?
+[ ${rc} -eq 0 ] && exit 0
+
+# What is so now, asked again rather than taken from the answer above, which the wait can overtake:
+# the run lets the fall-back go as soon as every module the network needs matches, and can still be
+# cut off on another module's build after that; and os-xgs-npu's follower clears nextboot once it has
+# rebuilt its own module, whoever armed it (ONE FALL-BACK FOR THE WHOLE HOST, in follow.sh), which its
+# five-minute run can do while this one waits - so a fall-back still needed is armed again here. Only
+# the answer is said, and kernel.old only where it is armed. Until 2026-11-06 a run cut off here was
+# said to leave one the network needs on kernel.old, armed or not.
+pin
+case $? in
+0) FOUND="the next boot takes kernel.old, which a module the network needs is built for" ;;
+2) FOUND="every module the network needs that this plugin follows is built for /boot/kernel" ;;
+*) FOUND="this plugin did not send the next boot to kernel.old" ;;
+esac
 if [ ${rc} -eq 124 ] || [ ${rc} -eq 137 ]; then
-	# Since 2026-10-30 follow.sh arms the fall-back before it starts a rebuild, so a run cut off here
-	# leaves the next boot on kernel.old for a module the network needs, where it matches that kernel.
 	/usr/bin/logger -t kernelfollow -p daemon.err \
-	    "at shutdown: a module was not rebuilt in ${LIMIT}s; one the network needs takes kernel.old" \
-	    "at the next boot where it matches it, and the rebuild goes on from there"
-elif [ ${rc} -ne 0 ]; then
+	    "at shutdown: follow.sh was cut off after ${LIMIT}s; ${FOUND}"
+else
 	/usr/bin/logger -t kernelfollow -p daemon.err \
-	    "at shutdown: a module could not be rebuilt; see the entries above"
+	    "at shutdown: a module could not be rebuilt (see the entries above); ${FOUND}"
 fi
 exit 0

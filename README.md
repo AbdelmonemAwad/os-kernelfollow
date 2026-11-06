@@ -60,7 +60,9 @@ Rebuilds an out-of-tree FreeBSD kernel module for the kernel an OPNsense update 
   machine headers of that kernel; installed under a temporary name and moved into place, stamped,
   the previous build kept beside it as `.prev` with its own stamp;
 - **runs when it matters**: the upgrade hook, the stop hook of every orderly reboot (at most ten
-  minutes, so a fetch that will not finish never holds the machine), and cron every five minutes.
+  minutes for the run, and a minute at most for each of its two looks at the fall-back, before the
+  run and after it - each under a second as a rule - so a fetch that will not finish never holds the
+  machine), and cron every five minutes.
   With nothing registered each of these is a directory listing; with nothing to do, the log hears
   so once a boot and again when something changes, not at every tick (since 2026-10-29);
 - **for a module the network needs** (`CRITICAL=yes`), ~~when it cannot be rebuilt,~~ sends the next
@@ -92,11 +94,12 @@ this plugin:
 - touches `nextboot` only to cancel a fall-back it set itself, ~~never one os-xgs-npu set~~ and not
   while `octep.ko` or `npuep.ko` is built for another kernel than the one to follow: `nextboot`
   holds one fall-back for the whole host, and os-xgs-npu sets the same one, so cancelling this
-  plugin's could cancel os-xgs-npu's (since 2026-10-29). The other way round is not covered:
-  os-xgs-npu's follower clears `nextboot` once it has rebuilt its own module, so a fall-back armed
-  here for a module of another plugin, registered with `CRITICAL=yes` and still being rebuilt then,
-  goes with it until the next boot arms it again. No published plugin registers such a module
-  (found in review, 2026-10-30);
+  plugin's could cancel os-xgs-npu's (since 2026-10-29). The other way round: os-xgs-npu's follower
+  clears `nextboot` once it has rebuilt its own module, so a fall-back armed here for a module of
+  another plugin, registered with `CRITICAL=yes` and still being rebuilt then, goes with it. Until
+  2026-11-06 it stayed gone until the next boot armed it again; since then the stop hook of an
+  orderly reboot arms it again, on its own and waiting for no lock, before its run and once more
+  after it. No published plugin registers such a module (found in review, 2026-10-30);
 - leaves the extracted kernel sources in `/usr/src-*` for os-xgs-npu to remove.
 
 When os-xgs-npu hands its modules over is its owner's decision; nothing here changes it.

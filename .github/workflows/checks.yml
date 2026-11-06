@@ -7,16 +7,18 @@ name: checks
 # What a change to this plugin has to survive before it can be merged.
 #
 # Everything here is cheap and deterministic: it parses files and compares them with
-# each other. There is no OPNsense to install on a GitHub runner and no appliance to
-# measure, so this does not pretend to test behaviour - it catches the mistakes that
-# have actually happened while this plugin was being written:
+# each other, and since 2026-11-06 it runs follow.sh and its stop hook against a host
+# made up in a temporary directory. There is no OPNsense to install on a GitHub runner
+# and no appliance to measure, so this does not pretend to test behaviour on one - it
+# catches the mistakes that have actually happened while this plugin was being written:
 #
 #   * a template that no longer compiles, which takes the whole page to the crash
 #     reporter and tells the reader nothing;
 #   * a shell script or Python file with a syntax error, found after it was installed;
 #   * a string added to the page or to a data file and never translated, which shows
 #     up as one English sentence in the middle of an Arabic page;
-#   * an address from the machine this was written on, left in an example.
+#   * an address from the machine this was written on, left in an example;
+#   * a stop hook that said the next boot took kernel.old with nothing armed.
 
 on:
   push:
@@ -110,6 +112,21 @@ jobs:
       # still needs translating.
       - name: No Arabic outside the translation files
         run: python3 tools/check-code-language.py .
+
+  follower:
+    name: the follower
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # follow.sh and the stop hook against a made-up host - its kernels, registrations and
+      # state in a temporary directory, lockf played by util-linux flock(1): at a reboot
+      # while another run holds the lock, the fall-back to kernel.old armed first without
+      # it (PINONLY=1), armed again where it was cleared during the wait, and said only
+      # where it is armed; and a rebuild that fails with the new kernel still staged, left
+      # to that reboot (2026-11-06). tools/test-follow.py.
+      - name: The fall-back to kernel.old at a reboot
+        run: python3 tools/test-follow.py
 
   translations:
     name: translations
