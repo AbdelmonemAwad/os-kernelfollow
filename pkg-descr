@@ -13,6 +13,14 @@ follower.
 Plugin Changelog
 ================
 
+1.0.3
+
+* stop/21-kernelfollow, follow.sh: the fall-back armed first, on its own,
+  and the cut-off said as it is
+* follow.sh, stop/21-kernelfollow: fall-back let go once rebuilt module
+  matches, never across a major release, and an answer sh cannot give by
+  mistake
+
 1.0.2
 
 * the fall-back to kernel.old for a module the network needs: armed before its rebuild starts and held at every boot until the module matches, not only after a failure and for one boot
