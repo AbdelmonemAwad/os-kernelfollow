@@ -11,7 +11,12 @@ set -e
 HERE=$(cd "$(dirname "$0")/.." && pwd)
 
 # plugin files: src/ maps to /usr/local
+# The public keys a release must be signed with for self-update.py to install it (its
+# SIGNED RELEASES) are the set this tree holds and no other: the installed ones go first,
+# so a key the tree dropped goes with this install.
+rm -rf /usr/local/opnsense/scripts/kernelfollow/release-keys
 cp -R "${HERE}/src/" /usr/local/
+chmod 644 /usr/local/opnsense/scripts/kernelfollow/release-keys/*.pub
 chmod 755 /usr/local/opnsense/scripts/kernelfollow/*.py /usr/local/opnsense/scripts/kernelfollow/*.sh
 chmod 644 /usr/local/opnsense/scripts/kernelfollow/i18n/ui/source.json
 chmod 755 /usr/local/etc/rc.syshook.d/upgrade/30-kernelfollow /usr/local/etc/rc.syshook.d/stop/21-kernelfollow

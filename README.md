@@ -324,14 +324,23 @@ Taken by hand, to this repository's **releases**: from **XGS: Updates**, its *Pl
 [os-xgs-npu](https://github.com/AbdelmonemAwad/os-xgs-npu) that lists this plugin is installed - the
 tab calls `/usr/local/opnsense/scripts/kernelfollow/self-update.py`, with `check` to ask and without
 it to install - or by running that script. The plugin's cron entry runs the follower every five
-minutes, never the self-update; no cron entry runs that. It asks GitHub for the latest release and,
-when that is ahead of what is installed, downloads it and runs the `install/install.sh` it carries -
+minutes, never the self-update; no cron entry runs that. It reads the latest release's signed manifest
+and, when the release is ahead of what is installed, downloads the archive the manifest names and runs
+the `install/install.sh` it carries -
 the same script a hand install runs. A change merged on `main` reaches an installed firewall when it
 is released, not before.
 
+- **Signed releases** (since 2026-11-07). A release is installed only as its owner signed it. It carries
+  `os-kernelfollow-<tag>.tar.gz`, the tag's tree made by `git archive`; `release.json`, the manifest - the tag, its
+  commit and date, the archive's SHA-256 and size; and `release.json.sig`, the manifest's Ed25519 signature, made by
+  the owner's private signing repository, never by this repository's CI. The public keys are installed in
+  `/usr/local/opnsense/scripts/kernelfollow/release-keys/`. A release whose signature does not verify with one of them,
+  or whose archive is not the one signed, is not installed, and a release not signed is not offered. GitHub's API
+  and npuforge.org's copy of it no longer choose what is installed, and the tag's commit is confirmed with GitHub
+  before the download. A release is made a draft by `release.yml` and published only once it is signed.
 - **Only forward.** What is installed is recorded in `/usr/local/share/os-kernelfollow/installed.json`
   by the installer: the commit, from a git checkout or from the `.source-commit` stamp an update
-  leaves in the tree. A firewall running something newer than the release is not taken back; an
+  leaves in the tree. A firewall running something newer than the release - by the date signed - is not taken back; an
   install with no commit recorded takes the latest release once.
 - **A package install records no commit**, so its first self-update takes the latest release and
   installs it with `install/install.sh`, outside pkg. A package is updated with a newer package
@@ -340,16 +349,9 @@ is released, not before.
   `/usr/local/share/os-kernelfollow/update.json`, and the installer's output in `update.log` beside it.
 - `self-update.py check` says what it would do and changes nothing.
 
-~~Not tested yet: an update taken this way - 1.0.0 is the first release, so none has been ahead of
-an installed copy.~~ Tested on 2026-10-29 on a plain OPNsense ~~26.7~~ 26.7.7 in qemu, where the package had
-been added with pkg, which records no commit: `self-update.py check` found the release `v1.0.0`
-(d281f36b4cd9) and nothing installed to compare it with, so to be taken. `self-update.py` fetched
-its source, ran its `install/install.sh` and answered `updated to v1.0.0 (d281f36b4cd9)`, which the
-system log has too. `installed.json` then recorded that commit, from the stamp, and a second check
-found it identical: nothing to take. ~~Not yet: a release ahead of the one installed - 1.0.0 is
-still the only release.~~ Taken on 2026-10-30, on an XGS 3300 with OPNsense 26.7.7: with 1.0.0
-installed, `self-update.py`, run over SSH, answered `updated to v1.0.1 (244ef6257311)`, the system
-log carries the same line, and `installed.json` recorded that commit.
+Tested by `tools/test-self-update.py`, which the checks run - releases made and signed in the test with
+throwaway keys: what is taken and refused, and what an update installs - and on an XGS 3300 through the
+*Plugins* tab, with seven other plugins: [the plugins' signed releases, measured](https://github.com/AbdelmonemAwad/os-xgs-npu/blob/main/docs/measurements/signed-plugin-releases-2026-11-07.md).
 
 ## Where it fits
 
