@@ -13,6 +13,12 @@ follower.
 Plugin Changelog
 ================
 
+1.0.4
+
+* Signed releases: a release is installed only as its owner signed it
+* self-update.py: the latest release's signature read by the tag its
+  manifest names
+
 1.0.3
 
 * fall-back to kernel.old armed first at every orderly reboot, without
