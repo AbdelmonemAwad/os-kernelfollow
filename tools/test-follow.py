@@ -19,6 +19,9 @@ once it has rebuilt the module the network needs for that kernel, applied since,
 where none needs it; an error of the shell in PINONLY=1 not read as "none needs it"; and kernel.old of
 another FreeBSD major release never armed.
 
+And since 2026-11-17 the time follow.sh last built a module, kept in its record through the runs after
+it; date(1) answers +%s with the time a test gives it.
+
     python3 tools/test-follow.py
 """
 import fcntl
@@ -87,6 +90,10 @@ class Follower(unittest.TestCase):
                               'for c in *.c; do : > "${c%.c}.o"; done\n'
                               'echo "${kmod}" > "${kmod}.ko"\nln -s "${sysdir}/amd64/include" machine')
         self.stat = self.stub('stat', 'for a; do f=$a; done\nwc -c < "$f" | tr -d " "')
+        # date +%s answers the time at() gave, where a test gave one; everything else is date's own
+        now = self.path('now')
+        self.date = self.stub('date', 'if [ "$1" = +%%s ] && [ -f \'%s\' ]; then cat \'%s\'\n'
+                                      'else exec /bin/date "$@"; fi' % (now, now))
         self.fetch(works=False)
         self.copies = {}
 
@@ -179,7 +186,8 @@ class Follower(unittest.TestCase):
             with open(source, encoding='utf-8') as f:
                 text = f.read()
             for command, stand_in in (('/usr/bin/lockf', self.lockf), ('/usr/bin/logger', self.logger),
-                                      ('/usr/bin/make', self.make), ('/usr/bin/stat', self.stat)):
+                                      ('/usr/bin/make', self.make), ('/usr/bin/stat', self.stat),
+                                      ('/bin/date', self.date)):
                 text = text.replace(command, stand_in)
             self.write(name, text)
             self.copies[name] = self.path(name)
@@ -259,6 +267,14 @@ class Follower(unittest.TestCase):
     def armed(self):
         """whether the next boot is sent to kernel.old"""
         return self.read('nextboot.conf') == 'kernel="kernel.old"\n'
+
+    def at(self, seconds):
+        """the time date +%s answers from now on"""
+        self.write('now', '%d\n' % seconds)
+
+    def result_of(self, name):
+        """follow.sh's record of a module, KEY=value a line, as a dict"""
+        return dict(line.split('=', 1) for line in self.lines('state/results/' + name))
 
 
 class PinOnly(Follower):
@@ -631,6 +647,49 @@ class AtShutdown(Follower):
         self.assertEqual(self.lines('nextboot.calls'), [])
         self.assertIn('cut off after 2s; this plugin did not send the next boot to kernel.old', line)
         self.assertNotIn('every module the network needs', line)
+
+
+class Record(Follower):
+    """What follow.sh records of each module for the page and status.py: since 2026-11-17 built_at, the time
+    it last built and installed the module, carried from each run's record to the next while the module is
+    installed. Until then the five-minute run's "ok" replaced the record that said "built", its time with
+    it, and nothing kept when a module had been built."""
+
+    T = 1763370000
+
+    def test_the_time_of_a_build_stays_through_the_runs_after_it(self):
+        self.fetch(works=True)
+        self.register('net', OLD)
+        self.at(self.T)
+        rc, out, _ = self.follow()
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.read('boot/modules/net.ko.kernel'), NEXT + '\n')
+        rec = self.result_of('net')
+        self.assertEqual((rec['result'], rec['at'], rec['built_at']), ('built', str(self.T), str(self.T)))
+        self.at(self.T + 300)
+        rc, out, _ = self.follow()
+        self.assertEqual(rc, 0, out)
+        rec = self.result_of('net')
+        self.assertEqual((rec['result'], rec['at'], rec['built_at']), ('ok', str(self.T + 300), str(self.T)))
+
+    def test_a_rebuild_that_fails_keeps_the_time_of_the_last_build(self):
+        self.register('net', OLD)
+        self.write('state/results/net', 'name=net\nresult=ok\nmessage=matches the kernel to follow\n'
+                                        'target=%s\nat=%d\nbuilt_at=%d\n' % (OLD, self.T - 600, self.T - 86400))
+        self.at(self.T)
+        rc, out, _ = self.follow()
+        self.assertEqual(rc, 1, out)
+        rec = self.result_of('net')
+        self.assertEqual((rec['result'], rec['at'], rec['built_at']), ('failed', str(self.T), str(self.T - 86400)))
+
+    def test_a_module_that_is_not_installed_carries_no_build_time(self):
+        self.register('gone', None)
+        self.write('state/results/gone', 'name=gone\nresult=built\nmessage=rebuilt for the kernel to follow\n'
+                                         'target=%s\nat=%d\nbuilt_at=%d\n' % (OLD, self.T - 600, self.T - 600))
+        rc, out, _ = self.follow()
+        self.assertEqual(rc, 0, out)
+        rec = self.result_of('gone')
+        self.assertEqual((rec['result'], rec['built_at']), ('skipped', ''))
 
 
 if __name__ == '__main__':

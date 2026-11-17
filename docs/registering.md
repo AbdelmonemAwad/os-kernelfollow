@@ -39,6 +39,14 @@ module built for another kernel of the same branch loads without complaint and r
 structures at the wrong offsets - and take `<MODULE>.prev` when its stamp is the one that matches.
 That part is the owner's: the follower builds and stamps, it does not load.
 
+## What the follower records
+
+Every whole run - not `DRY=1`, not `PINONLY=1` - records what it found or did with each registration in
+`/var/db/os-kernelfollow/results/<name>`, one `KEY=value` a line: `result` (`ok`, `built`, `failed` or
+`skipped`), `message`, `target` (the kernel it followed), `at` (when, in seconds since the epoch) and,
+since 2026-11-17, `built_at` - when this plugin last built and installed the module, kept from one run
+to the next while the module is installed, and empty when it is not or has not been built since.
+
 ## When the sources change
 
 The follower rebuilds a module when its stamp names another kernel than the one to follow - not
