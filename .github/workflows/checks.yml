@@ -139,8 +139,9 @@ jobs:
       # that began on a staged set once it has rebuilt the module the network needs, and by
       # PINONLY=1 where none needs it; an error of the shell not read as none needing it;
       # and kernel.old of another FreeBSD major release never armed. Since 2026-11-17 also the
-      # time a module was last built, kept in its record through the runs after it.
-      # tools/test-follow.py.
+      # time a module was last built, kept in its record through the runs after it, and
+      # status.py's follower, last result and build time of each module - os-xgs-npu's from its
+      # own follower's record. tools/test-follow.py.
       - name: The fall-back to kernel.old at a reboot
         run: python3 tools/test-follow.py
 

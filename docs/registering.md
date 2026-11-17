@@ -39,13 +39,25 @@ module built for another kernel of the same branch loads without complaint and r
 structures at the wrong offsets - and take `<MODULE>.prev` when its stamp is the one that matches.
 That part is the owner's: the follower builds and stamps, it does not load.
 
-## What the follower records
+## What the follower records, and what the status says
 
 Every whole run - not `DRY=1`, not `PINONLY=1` - records what it found or did with each registration in
 `/var/db/os-kernelfollow/results/<name>`, one `KEY=value` a line: `result` (`ok`, `built`, `failed` or
 `skipped`), `message`, `target` (the kernel it followed), `at` (when, in seconds since the epoch) and,
 since 2026-11-17, `built_at` - when this plugin last built and installed the module, kept from one run
 to the next while the module is installed, and empty when it is not or has not been built since.
+
+`status.py` - the page's, and configd's `kernelfollow status` - gives each module, registered or
+os-xgs-npu's (`project_modules`), what the follower that follows it recorded:
+
+| field | what it is |
+|---|---|
+| `followed_by` | `this plugin`, or `os-xgs-npu` for `octep.ko` and `npuep.ko` while that plugin's follower is installed |
+| `last` | `result`, `message`, `target` and `at` of that follower's last run; each `null` where it has recorded none |
+| `built_at` | when that follower last built the module; `null` when it has not said, or the module is not installed |
+
+beside `module`, `installed`, `stamp`, `matches` (the stamp is the kernel the next boot takes) and
+`prev_stamp`.
 
 ## When the sources change
 
@@ -69,4 +81,6 @@ Delete the file. The module and its stamps stay where they are.
 ## os-xgs-npu's modules
 
 `octep.ko` and `npuep.ko` are followed by os-xgs-npu's own follower while that is installed; a
-registration for either is shown and left to it.
+registration for either is shown and left to it. Their `last` and `built_at` come from that follower's
+own record, `/var/db/os-xgs-npu/kernel-follow.result` - the same keys, and `module`, the module it
+follows - where it keeps one, and are `null` where it does not; XGS: Updates reads the same record.

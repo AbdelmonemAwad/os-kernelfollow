@@ -12,6 +12,13 @@ where its follower is installed, the kernel sources on disk, and the settings.
 
 Read only. The kernel to follow is read as follow.sh reads it - a staged set first, /boot/kernel
 second - out of the binary, without booting it.
+
+Each module, registered or os-xgs-npu's, says who follows it (followed_by), what that follower's last
+run found or did with it (last) and when it last built it (built_at), each read from that follower's
+own record (2026-11-17): this plugin's results/<name>, or for octep.ko and npuep.ko where os-xgs-npu's
+follower is installed, that follower's /var/db/os-xgs-npu/kernel-follow.result. Until then os-xgs-npu's
+modules carried their stamps alone, a registration of either carried this plugin's "skipped", and no
+module said when it was built.
 """
 
 import fcntl
@@ -28,6 +35,9 @@ STATE = '/var/db/os-kernelfollow'
 SRCPOOL = '/usr/local/share/os-kernelfollow/kernel-sources'
 PROJECT = '/usr/local/opnsense/scripts/octep/kernel-follow.sh'
 PROJECT_MODULES = ('/boot/modules/octep.ko', '/boot/modules/npuep.ko')
+# What os-xgs-npu's follower records of its last run, as follow.sh records each module (its
+# install/kernel-follow.sh, RESULT): the module it follows, and what it found or did with it.
+PROJECT_RESULT = '/var/db/os-xgs-npu/kernel-follow.result'
 KERNEL = '/boot/kernel/kernel'
 WORKPREFIX = '/var/cache/opnsense-update'
 CONF = '/conf/config.xml'
@@ -126,6 +136,28 @@ def module_state(module, target):
     }
 
 
+def number(text):
+    return int(text) if (text or '').isdigit() else None
+
+
+def followed(entry, record):
+    """What a follower's record says of a module: its last run's result, the line that says why, the
+    kernel it followed and when - and when it last built the module, said only while the module is
+    installed."""
+    entry['last'] = {'result': record.get('result'), 'message': record.get('message'),
+                     'target': record.get('target'), 'at': number(record.get('at'))}
+    entry['built_at'] = number(record.get('built_at')) if entry['installed'] else None
+    return entry
+
+
+def project_record(module):
+    """os-xgs-npu's follower's record, where it is of this module: that follower follows one module, the
+    one installed, and names it in its record."""
+    record = keys(PROJECT_RESULT)
+    same = bool(module) and os.path.normpath(record.get('module') or '-') == os.path.normpath(module)
+    return record if same else {}
+
+
 def main():
     target, where = kernel_to_follow()
     running = subprocess.run(['/usr/bin/uname', '-v'], capture_output=True, text=True).stdout.strip()
@@ -140,11 +172,12 @@ def main():
                      {'module': '', 'installed': False, 'stamp': None, 'matches': False, 'prev_stamp': None})
         entry['followed_by'] = ('os-xgs-npu' if project and os.path.basename(entry['module']) in
                                 ('octep.ko', 'npuep.ko') else 'this plugin')
-        last = keys(os.path.join(STATE, 'results', name))
-        entry['last'] = {'result': last.get('result'), 'message': last.get('message'),
-                         'at': int(last['at']) if last.get('at', '').isdigit() else None}
-        modules.append(entry)
-    project_modules = [module_state(m, target) for m in PROJECT_MODULES if project and os.path.exists(m)]
+        # the record of whoever follows it: follow.sh leaves those two to os-xgs-npu's follower, and its
+        # own record of either says only that
+        modules.append(followed(entry, project_record(entry['module']) if entry['followed_by'] == 'os-xgs-npu'
+                                else keys(os.path.join(STATE, 'results', name))))
+    project_modules = [dict(followed(module_state(m, target), project_record(m)), followed_by='os-xgs-npu')
+                       for m in PROJECT_MODULES if project and os.path.exists(m)]
     trees = sorted(p for p in glob.glob('/usr/src-*-*')
                    if re.match(r'^src-[0-9][0-9.]*-[0-9a-f]{7,40}$', os.path.basename(p)))
     pool = [{'file': os.path.basename(p), 'bytes': os.path.getsize(p)}
