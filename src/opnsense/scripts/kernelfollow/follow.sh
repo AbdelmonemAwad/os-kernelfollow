@@ -270,17 +270,23 @@ note "kernel running  : ${RUNNING}"
 # and until then the next five-minute run's "ok" replaced the record that said "built", its time with
 # it. A record of a module that is not installed, or of a registration that names none, carries none.
 # status.py reads both.
+#
+# AND OF WHICH MODULE: module, the one the registration names, and built_at carried only from a record
+# of that same module, as os-xgs-npu's follower carries its own. A registration whose MODULE was changed
+# to another file would otherwise have been said to be built when the file it named before was.
 record() {
 	[ "${DRY}" = 1 ] && return 0
 	rec_at=$(/bin/date +%s)
 	rec_built=
 	if [ "$2" = built ]; then
 		rec_built=${rec_at}
-	elif [ -n "${module:-}" ] && [ -f "${module}" ] && [ -f "${STATE}/results/$1" ]; then
+	elif [ -n "${module:-}" ] && [ -f "${module}" ] && [ -f "${STATE}/results/$1" ] &&
+	    [ "$(val module "${STATE}/results/$1")" = "${module}" ]; then
 		rec_built=$(val built_at "${STATE}/results/$1")
 	fi
 	{
 		echo "name=$1"
+		echo "module=${module:-}"
 		echo "result=$2"
 		echo "message=$3"
 		echo "target=${TARGET}"

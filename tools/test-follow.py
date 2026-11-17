@@ -20,10 +20,10 @@ where none needs it; an error of the shell in PINONLY=1 not read as "none needs 
 another FreeBSD major release never armed.
 
 And since 2026-11-17, what the page and XGS: Updates read: the time follow.sh last built a module, kept
-in its record through the runs after it, and status.py's who follows each module, what that follower
-last did and when it last built it - os-xgs-npu's from its own follower's record. status.py is loaded
-with its paths moved into the same temporary directory, and date(1) answers +%s with the time a test
-gives it.
+in its record through the runs after it while the record is of that module, and status.py's who follows
+each module, what that follower last did and when it last built it - os-xgs-npu's from its own
+follower's record. status.py is loaded with its paths moved into the same temporary directory, and
+date(1) answers +%s with the time a test gives it.
 
     python3 tools/test-follow.py
 """
@@ -661,7 +661,8 @@ class Record(Follower):
     """What follow.sh records of each module for the page and status.py: since 2026-11-17 built_at, the time
     it last built and installed the module, carried from each run's record to the next while the module is
     installed. Until then the five-minute run's "ok" replaced the record that said "built", its time with
-    it, and nothing kept when a module had been built."""
+    it, and nothing kept when a module had been built. And since the same day the module itself, the time
+    carried only from a record of that same module."""
 
     T = 1763370000
 
@@ -682,13 +683,38 @@ class Record(Follower):
 
     def test_a_rebuild_that_fails_keeps_the_time_of_the_last_build(self):
         self.register('net', OLD)
-        self.write('state/results/net', 'name=net\nresult=ok\nmessage=matches the kernel to follow\n'
-                                        'target=%s\nat=%d\nbuilt_at=%d\n' % (OLD, self.T - 600, self.T - 86400))
+        self.write('state/results/net', 'name=net\nmodule=%s\nresult=ok\nmessage=matches the kernel to follow\n'
+                                        'target=%s\nat=%d\nbuilt_at=%d\n'
+                   % (self.path('boot/modules/net.ko'), OLD, self.T - 600, self.T - 86400))
         self.at(self.T)
         rc, out, _ = self.follow()
         self.assertEqual(rc, 1, out)
         rec = self.result_of('net')
         self.assertEqual((rec['result'], rec['at'], rec['built_at']), ('failed', str(self.T), str(self.T - 86400)))
+
+    def test_a_registration_whose_module_changed_is_not_said_to_be_built_when_the_one_before_was(self):
+        """The record names its module (2026-11-17): a registration's MODULE changed to another file,
+        installed and stamped by its own package, takes no build time from the record of the file it
+        named before."""
+        self.fetch(works=True)
+        self.register('hello', OLD)
+        self.at(self.T)
+        rc, out, _ = self.follow()
+        self.assertEqual(rc, 0, out)
+        rec = self.result_of('hello')
+        self.assertEqual((rec['module'], rec['result'], rec['built_at']),
+                         (self.path('boot/modules/hello.ko'), 'built', str(self.T)))
+        # the plugin now names hello2.ko, which its package installed, built for the kernel to follow
+        conf = self.read('confd/hello.conf').replace('/hello.ko', '/hello2.ko')
+        self.write('confd/hello.conf', conf)
+        self.write('boot/modules/hello2.ko', 'ELF hello2\n')
+        self.write('boot/modules/hello2.ko.kernel', NEXT + '\n')
+        self.at(self.T + 300)
+        rc, out, _ = self.follow()
+        self.assertEqual(rc, 0, out)
+        rec = self.result_of('hello')
+        self.assertEqual((rec['module'], rec['result'], rec['at'], rec['built_at']),
+                         (self.path('boot/modules/hello2.ko'), 'ok', str(self.T + 300), ''))
 
     def test_a_module_that_is_not_installed_carries_no_build_time(self):
         self.register('gone', None)
