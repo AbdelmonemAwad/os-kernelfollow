@@ -13,6 +13,17 @@ follower.
 Plugin Changelog
 ================
 
+1.0.5
+
+* status.py gives a JSON status for each module: the kernel it is built
+  for, the next kernel and whether they match, its last build and
+  result, and which follower keeps it - os-xgs-npu's modules read from
+  that plugin's own follower; os-xgs-npu's XGS: Updates reads it to say
+  whether the driver is ready before a reboot
+* follow.sh keeps when a module was last built; each record names its
+  module, and a build time is carried only from a record of the same
+  module
+
 1.0.4
 
 * an update installed only as its owner signed it: the release's
