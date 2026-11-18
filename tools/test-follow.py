@@ -19,9 +19,19 @@ once it has rebuilt the module the network needs for that kernel, applied since,
 where none needs it; an error of the shell in PINONLY=1 not read as "none needs it"; and kernel.old of
 another FreeBSD major release never armed.
 
+And since 2026-11-17, what the page and XGS: Updates read: the time follow.sh last built a module, kept
+in its record through the runs after it while the record is of that module, and status.py's who follows
+each module, what that follower last did and when it last built it - os-xgs-npu's from its own
+follower's record. status.py is loaded with its paths moved into the same temporary directory, and
+date(1) answers +%s with the time a test gives it.
+
     python3 tools/test-follow.py
 """
+import contextlib
 import fcntl
+import importlib.util
+import io
+import json
 import os
 import shutil
 import signal
@@ -34,6 +44,7 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 FOLLOW = os.path.join(HERE, '..', 'src', 'opnsense', 'scripts', 'kernelfollow', 'follow.sh')
 STOP = os.path.join(HERE, '..', 'src', 'etc', 'rc.syshook.d', 'stop', '21-kernelfollow')
+STATUS = os.path.join(HERE, '..', 'src', 'opnsense', 'scripts', 'kernelfollow', 'status.py')
 
 # After an update: NEXT in /boot/kernel, the kernel the next boot takes; OLD the one running, now in
 # /boot/kernel.old; OLDER the one before both.
@@ -87,6 +98,10 @@ class Follower(unittest.TestCase):
                               'for c in *.c; do : > "${c%.c}.o"; done\n'
                               'echo "${kmod}" > "${kmod}.ko"\nln -s "${sysdir}/amd64/include" machine')
         self.stat = self.stub('stat', 'for a; do f=$a; done\nwc -c < "$f" | tr -d " "')
+        # date +%s answers the time at() gave, where a test gave one; everything else is date's own
+        now = self.path('now')
+        self.date = self.stub('date', 'if [ "$1" = +%%s ] && [ -f \'%s\' ]; then cat \'%s\'\n'
+                                      'else exec /bin/date "$@"; fi' % (now, now))
         self.fetch(works=False)
         self.copies = {}
 
@@ -179,7 +194,8 @@ class Follower(unittest.TestCase):
             with open(source, encoding='utf-8') as f:
                 text = f.read()
             for command, stand_in in (('/usr/bin/lockf', self.lockf), ('/usr/bin/logger', self.logger),
-                                      ('/usr/bin/make', self.make), ('/usr/bin/stat', self.stat)):
+                                      ('/usr/bin/make', self.make), ('/usr/bin/stat', self.stat),
+                                      ('/bin/date', self.date)):
                 text = text.replace(command, stand_in)
             self.write(name, text)
             self.copies[name] = self.path(name)
@@ -259,6 +275,14 @@ class Follower(unittest.TestCase):
     def armed(self):
         """whether the next boot is sent to kernel.old"""
         return self.read('nextboot.conf') == 'kernel="kernel.old"\n'
+
+    def at(self, seconds):
+        """the time date +%s answers from now on"""
+        self.write('now', '%d\n' % seconds)
+
+    def result_of(self, name):
+        """follow.sh's record of a module, KEY=value a line, as a dict"""
+        return dict(line.split('=', 1) for line in self.lines('state/results/' + name))
 
 
 class PinOnly(Follower):
@@ -631,6 +655,168 @@ class AtShutdown(Follower):
         self.assertEqual(self.lines('nextboot.calls'), [])
         self.assertIn('cut off after 2s; this plugin did not send the next boot to kernel.old', line)
         self.assertNotIn('every module the network needs', line)
+
+
+class Record(Follower):
+    """What follow.sh records of each module for the page and status.py: since 2026-11-17 built_at, the time
+    it last built and installed the module, carried from each run's record to the next while the module is
+    installed. Until then the five-minute run's "ok" replaced the record that said "built", its time with
+    it, and nothing kept when a module had been built. And since the same day the module itself, the time
+    carried only from a record of that same module."""
+
+    T = 1763370000
+
+    def test_the_time_of_a_build_stays_through_the_runs_after_it(self):
+        self.fetch(works=True)
+        self.register('net', OLD)
+        self.at(self.T)
+        rc, out, _ = self.follow()
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.read('boot/modules/net.ko.kernel'), NEXT + '\n')
+        rec = self.result_of('net')
+        self.assertEqual((rec['result'], rec['at'], rec['built_at']), ('built', str(self.T), str(self.T)))
+        self.at(self.T + 300)
+        rc, out, _ = self.follow()
+        self.assertEqual(rc, 0, out)
+        rec = self.result_of('net')
+        self.assertEqual((rec['result'], rec['at'], rec['built_at']), ('ok', str(self.T + 300), str(self.T)))
+
+    def test_a_rebuild_that_fails_keeps_the_time_of_the_last_build(self):
+        self.register('net', OLD)
+        self.write('state/results/net', 'name=net\nmodule=%s\nresult=ok\nmessage=matches the kernel to follow\n'
+                                        'target=%s\nat=%d\nbuilt_at=%d\n'
+                   % (self.path('boot/modules/net.ko'), OLD, self.T - 600, self.T - 86400))
+        self.at(self.T)
+        rc, out, _ = self.follow()
+        self.assertEqual(rc, 1, out)
+        rec = self.result_of('net')
+        self.assertEqual((rec['result'], rec['at'], rec['built_at']), ('failed', str(self.T), str(self.T - 86400)))
+
+    def test_a_registration_whose_module_changed_is_not_said_to_be_built_when_the_one_before_was(self):
+        """The record names its module (2026-11-17): a registration's MODULE changed to another file,
+        installed and stamped by its own package, takes no build time from the record of the file it
+        named before."""
+        self.fetch(works=True)
+        self.register('hello', OLD)
+        self.at(self.T)
+        rc, out, _ = self.follow()
+        self.assertEqual(rc, 0, out)
+        rec = self.result_of('hello')
+        self.assertEqual((rec['module'], rec['result'], rec['built_at']),
+                         (self.path('boot/modules/hello.ko'), 'built', str(self.T)))
+        # the plugin now names hello2.ko, which its package installed, built for the kernel to follow
+        conf = self.read('confd/hello.conf').replace('/hello.ko', '/hello2.ko')
+        self.write('confd/hello.conf', conf)
+        self.write('boot/modules/hello2.ko', 'ELF hello2\n')
+        self.write('boot/modules/hello2.ko.kernel', NEXT + '\n')
+        self.at(self.T + 300)
+        rc, out, _ = self.follow()
+        self.assertEqual(rc, 0, out)
+        rec = self.result_of('hello')
+        self.assertEqual((rec['module'], rec['result'], rec['at'], rec['built_at']),
+                         (self.path('boot/modules/hello2.ko'), 'ok', str(self.T + 300), ''))
+
+    def test_a_module_that_is_not_installed_carries_no_build_time(self):
+        self.register('gone', None)
+        self.write('state/results/gone', 'name=gone\nresult=built\nmessage=rebuilt for the kernel to follow\n'
+                                         'target=%s\nat=%d\nbuilt_at=%d\n' % (OLD, self.T - 600, self.T - 600))
+        rc, out, _ = self.follow()
+        self.assertEqual(rc, 0, out)
+        rec = self.result_of('gone')
+        self.assertEqual((rec['result'], rec['built_at']), ('skipped', ''))
+
+
+class Status(Follower):
+    """status.py's modules (2026-11-17): who follows each, what that follower last found or did with it and
+    when it last built it, from that follower's own record - this plugin's results/<name>, or os-xgs-npu's
+    follower's kernel-follow.result for octep.ko and npuep.ko where that follower is installed. Until then
+    os-xgs-npu's modules carried their stamps alone, and a registration of either this plugin's "skipped"."""
+
+    T = 1763370000
+
+    def status(self):
+        """status.py's answer, its paths moved into the made-up host"""
+        spec = importlib.util.spec_from_file_location('kernelfollow_status', STATUS)
+        st = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(st)
+        st.CONFD, st.STATE = self.path('confd'), self.path('state')
+        st.SRCPOOL, st.CONF = self.path('share/kernel-sources'), self.path('config.xml')
+        st.KERNEL, st.WORKPREFIX = self.path('boot/kernel/kernel'), self.path('update')
+        st.PROJECT = self.path('octep/kernel-follow.sh')
+        st.PROJECT_MODULES = tuple(self.path('boot/modules/%s.ko' % m) for m in ('octep', 'npuep'))
+        st.PROJECT_RESULT = self.path('os-xgs-npu/kernel-follow.result')
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            st.main()
+        return json.loads(printed.getvalue())
+
+    def os_xgs_npu(self, installed=True, **record):
+        """os-xgs-npu installed: its follower, and its octep.ko built for the kernel to follow unless
+        installed is False; and its follower's record, KEY=value a line, where one is given"""
+        self.write('octep/kernel-follow.sh', '# os-xgs-npu is installed\n')
+        if installed:
+            self.write('boot/modules/octep.ko', 'ELF octep\n')
+            self.write('boot/modules/octep.ko.kernel', NEXT + '\n')
+        if record:
+            self.write('os-xgs-npu/kernel-follow.result', ''.join('%s=%s\n' % kv for kv in record.items()))
+
+    def test_a_module_this_plugin_built_says_when_and_what_its_last_run_did(self):
+        self.fetch(works=True)
+        self.register('net', OLD)
+        self.at(self.T)
+        self.follow()
+        self.at(self.T + 300)
+        self.follow()
+        m = self.status()['modules'][0]
+        self.assertEqual((m['name'], m['followed_by'], m['matches'], m['built_at']),
+                         ('net', 'this plugin', True, self.T))
+        self.assertEqual(m['last'], {'result': 'ok', 'message': 'matches the kernel to follow', 'target': NEXT,
+                                     'at': self.T + 300})
+
+    def test_a_module_that_is_not_installed_has_no_build_time(self):
+        # a record left from before the module was taken away by hand
+        self.register('gone', None)
+        self.write('state/results/gone', 'name=gone\nresult=built\nmessage=rebuilt for the kernel to follow\n'
+                                         'target=%s\nat=%d\nbuilt_at=%d\n' % (NEXT, self.T, self.T))
+        m = self.status()['modules'][0]
+        self.assertEqual((m['installed'], m['built_at'], m['last']['result']), (False, None, 'built'))
+
+    def test_os_xgs_npu_s_module_carries_its_own_follower_s_record(self):
+        self.os_xgs_npu(module=self.path('boot/modules/octep.ko'), result='built',
+                        message='rebuilt for the kernel to follow', target=NEXT, at=self.T, built_at=self.T)
+        s = self.status()
+        self.assertEqual(len(s['project_modules']), 1, s['project_modules'])
+        m = s['project_modules'][0]
+        self.assertEqual((m['module'], m['followed_by'], m['matches'], m['built_at']),
+                         (self.path('boot/modules/octep.ko'), 'os-xgs-npu', True, self.T))
+        self.assertEqual(m['last'], {'result': 'built', 'message': 'rebuilt for the kernel to follow',
+                                     'target': NEXT, 'at': self.T})
+
+    def test_a_record_of_another_module_is_not_taken_for_it(self):
+        self.os_xgs_npu(module=self.path('boot/modules/npuep.ko'), result='failed',
+                        message='could not get kernel sources for ' + NEXT, target=NEXT, at=self.T, built_at=self.T)
+        m = self.status()['project_modules'][0]
+        self.assertEqual((m['followed_by'], m['built_at']), ('os-xgs-npu', None))
+        self.assertEqual(m['last'], {'result': None, 'message': None, 'target': None, 'at': None})
+
+    def test_with_no_record_of_its_follower_nothing_is_made_up(self):
+        # os-xgs-npu from before its follower kept one
+        self.os_xgs_npu()
+        m = self.status()['project_modules'][0]
+        self.assertEqual((m['followed_by'], m['matches'], m['built_at']), ('os-xgs-npu', True, None))
+        self.assertEqual(m['last'], {'result': None, 'message': None, 'target': None, 'at': None})
+
+    def test_a_registration_os_xgs_npu_follows_reads_that_follower_s_record(self):
+        self.register('octep', NEXT)
+        self.os_xgs_npu(module=self.path('boot/modules/octep.ko'), result='ok',
+                        message='matches the kernel to follow', target=NEXT, at=self.T, built_at=self.T - 3600)
+        rc, out, _ = self.follow()
+        self.assertEqual(rc, 0, out)
+        self.assertEqual(self.result_of('octep')['result'], 'skipped')
+        m = self.status()['modules'][0]
+        self.assertEqual((m['name'], m['followed_by'], m['built_at']), ('octep', 'os-xgs-npu', self.T - 3600))
+        self.assertEqual(m['last'], {'result': 'ok', 'message': 'matches the kernel to follow', 'target': NEXT,
+                                     'at': self.T})
 
 
 if __name__ == '__main__':
