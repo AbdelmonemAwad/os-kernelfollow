@@ -13,6 +13,11 @@ follower.
 Plugin Changelog
 ================
 
+1.0.5
+
+* Phase 1: a JSON status for each module - its kernel, the next one, its
+  last build and its follower
+
 1.0.4
 
 * an update installed only as its owner signed it: the release's
