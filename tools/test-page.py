@@ -65,6 +65,9 @@ class GridRows(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         if not shutil.which('node'):
+            # On a CI runner a skip would pass the step green with nothing tested, so it fails there.
+            if os.environ.get('CI'):
+                raise RuntimeError('node(1) is not on this runner')
             raise unittest.SkipTest('node(1) is not on this machine')
 
     def test_os_xgs_npu_s_module_shows_its_follower_s_last_run(self):
