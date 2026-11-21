@@ -167,7 +167,10 @@
                     project: 0
                 });
             });
+            /* their last run from os-xgs-npu's follower's record, as status.py gives it in each
+               entry: the column showed '-' for them whatever that record said (2026-11-22) */
             $.each(data.project_modules || [], function (i, m) {
+                const last = m.last || {};
                 rows.push({
                     key: 'project:' + m.module,
                     name: (m.module || '').replace(/^.*\//, '').replace(/\.ko$/, ''),
@@ -176,9 +179,9 @@
                     stamp: short(m.stamp),
                     state: m.matches ? 'matches' : 'rebuild',
                     followed_by: 'os-xgs-npu',
-                    result: '',
-                    message: '',
-                    at: 0,
+                    result: last.result || '',
+                    message: last.message || '',
+                    at: last.at || 0,
                     project: 1
                 });
             });
