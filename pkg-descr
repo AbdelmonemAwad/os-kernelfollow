@@ -13,6 +13,10 @@ follower.
 Plugin Changelog
 ================
 
+1.0.6
+
+* Show the last run of os-xgs-npu's own modules
+
 1.0.5
 
 * status.py gives a JSON status for each module: the kernel it is built
