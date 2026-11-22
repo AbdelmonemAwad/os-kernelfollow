@@ -15,7 +15,10 @@ Plugin Changelog
 
 1.0.6
 
-* Show the last run of os-xgs-npu's own modules
+* the page's Last run column shows the last run of os-xgs-npu's own
+  modules, read from that plugin's follower record as status.py
+  already gave it; it showed "-" for them (os-xgs-npu#1204)
+* a page test runs the grid's rows with node, on CI too
 
 1.0.5
 
