@@ -145,6 +145,11 @@ jobs:
       - name: The fall-back to kernel.old at a reboot
         run: python3 tools/test-follow.py
 
+      # grid_rows() of the page, taken out of index.volt and run with the runner's node: each row's
+      # last run, os-xgs-npu's modules' from their follower's record (2026-11-22). tools/test-page.py.
+      - name: The page's grid rows
+        run: python3 tools/test-page.py
+
   translations:
     name: translations
     runs-on: ubuntu-latest
